@@ -1,0 +1,41 @@
+# Data files
+data/
+*.parquet
+*.xlsx
+*.csv
+
+# Environment
+.env
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+
+# ML model artifacts
+src/ml/models/*.pt
+src/ml/models/*.pkl
+src/ml/models/*.joblib
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Streamlit
+.streamlit/
+
+# Logs
+*.log
+logs/
