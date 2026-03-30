@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(pip --version)",
-      "Bash(pip install:*)"
+      "Bash(pip install:*)",
+      "Bash(python cli/indicators.py --ticker AAPL)"
     ]
   }
 }
