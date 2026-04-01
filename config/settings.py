@@ -90,6 +90,13 @@ class Settings(BaseSettings):
     circuit_breaker_daily_pct: float = 10.0  # halt if portfolio drops 10% in a day
     circuit_breaker_single_stock_pct: float = 15.0  # force-sell at 15% loss
 
+    # News & Sentiment (Phase 5)
+    news_articles_dir: Path = DATA_DIR / "news" / "articles"
+    news_short_interest_dir: Path = DATA_DIR / "news" / "short_interest"
+    news_max_articles: int = 50          # max articles fetched per ticker per run
+    news_sentiment_window_days: int = 7  # rolling window for sentiment summary
+    finbert_model: str = "ProsusAI/finbert"
+
     # Ranking
     top_n_picks: int = 20
 
