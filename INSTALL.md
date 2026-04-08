@@ -132,7 +132,7 @@ Install only what you need for the phase you're currently running:
 | 5 — News & Sentiment | + requests, feedparser, beautifulsoup4, transformers, sentencepiece |
 | 6 — Political/Insider | no new packages |
 | 7 — Options/Calendar | no new packages |
-| 8 — Dashboard | + streamlit, plotly |
+| 8 — Ranking + Dashboard | + streamlit, plotly (already listed above) |
 | 9 — Backtesting | no new packages |
 | 10 — Trading | + alpaca-trade-api |
 | 11 — Alerts & Reports | + discord-webhook, python-telegram-bot, fpdf2 |

@@ -1,0 +1,181 @@
+"""Page 2 — Long-Term Forecast.
+
+Run all 12 forecast methods for any ticker and compare their accuracy.
+Shows a forecast overlay chart, method comparison table, and AutoBest selection.
+"""
+
+from __future__ import annotations
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
+import pandas as pd
+import streamlit as st
+
+from config.settings import get_settings
+from dashboard.components.charts import forecast_overlay, price_line
+from dashboard.components.tables import style_forecast_table, style_generic
+
+st.set_page_config(page_title="Long-Term Forecast", page_icon="🔭", layout="wide")
+st.title("🔭 Long-Term Forecast")
+st.caption("All 12 forecast methods per ticker — seasonal decomposition, smoothing, OLS, and AutoBest.")
+st.divider()
+
+settings = get_settings()
+
+
+# ---------------------------------------------------------------------------#
+# Ticker selector
+# ---------------------------------------------------------------------------#
+
+daily_tickers = sorted([fp.stem for fp in settings.raw_daily_dir.glob("*.parquet")]) \
+    if settings.raw_daily_dir.exists() else []
+
+if not daily_tickers:
+    st.warning("No price data found. Run `python cli/scrape.py --backfill 2015` first.")
+    st.stop()
+
+col_left, col_right = st.columns([2, 3])
+with col_left:
+    selected = st.selectbox("Ticker", daily_tickers, index=daily_tickers.index("AAPL") if "AAPL" in daily_tickers else 0)
+    horizons = st.slider("Forecast quarters", 1, 8, value=settings.forecast_horizons)
+    holdout  = st.slider("Holdout periods (evaluation)", 4, 16, value=settings.holdout_periods)
+
+# ---------------------------------------------------------------------------#
+# Load cached history
+# ---------------------------------------------------------------------------#
+
+@st.cache_data(ttl=300)
+def _load_price(ticker: str) -> pd.DataFrame:
+    fp = settings.raw_daily_dir / f"{ticker}.parquet"
+    if not fp.exists():
+        return pd.DataFrame()
+    return pd.read_parquet(fp)
+
+@st.cache_data(ttl=300)
+def _load_quarterly(ticker: str) -> pd.Series | None:
+    fp = settings.raw_quarterly_dir / f"{ticker}.parquet"
+    if not fp.exists():
+        return None
+    df = pd.read_parquet(fp)
+    if df.empty or "Close" not in df.columns:
+        return None
+    s = df["Close"].dropna()
+    s.name = ticker
+    return s
+
+df_price   = _load_price(selected)
+series_q   = _load_quarterly(selected)
+
+# ---------------------------------------------------------------------------#
+# Check for saved forecasts (fast path — no re-run needed)
+# ---------------------------------------------------------------------------#
+
+@st.cache_data(ttl=300)
+def _load_saved_forecasts(ticker: str) -> pd.DataFrame:
+    fp = settings.forecasts_dir / f"{ticker}_forecasts.parquet"
+    if not fp.exists():
+        return pd.DataFrame()
+    return pd.read_parquet(fp)
+
+saved_forecasts = _load_saved_forecasts(selected)
+
+# ---------------------------------------------------------------------------#
+# Run / show controls
+# ---------------------------------------------------------------------------#
+
+st.divider()
+
+run_col, info_col = st.columns([1, 3])
+with run_col:
+    run_now = st.button("▶  Run All 12 Methods", type="primary")
+with info_col:
+    if not saved_forecasts.empty:
+        st.success(f"Saved forecasts found ({len(saved_forecasts)} rows). "
+                   "Showing stored results — click **Run** to refresh.")
+
+# ---------------------------------------------------------------------------#
+# Run forecasting pipeline
+# ---------------------------------------------------------------------------#
+
+@st.cache_data(ttl=600, show_spinner="Running 12 forecast methods …")
+def _run_forecasts(ticker: str, _horizons: int, _holdout: int):
+    from src.forecasting.runner import run_all_methods, comparison_table
+    from src.scraper.storage import get_ticker_filepath, load_dataframe
+
+    fp = get_ticker_filepath(ticker, settings.raw_quarterly_dir)
+    df = load_dataframe(fp)
+    if df.empty or "Close" not in df.columns:
+        return [], pd.DataFrame()
+
+    series = df["Close"].dropna()
+    series.name = ticker
+    results = run_all_methods(series, horizons=_horizons, holdout=_holdout)
+    for r in results:
+        r.ticker = ticker
+    table = comparison_table(results)
+    return results, table
+
+if run_now:
+    if series_q is None:
+        st.error(f"No quarterly data for {selected}. Run `cli/scrape.py` first.")
+    else:
+        results, table = _run_forecasts(selected, horizons, holdout)
+
+        if not results:
+            st.error("Forecast runner returned no results.")
+        else:
+            # Summary banner
+            from src.forecasting.runner import best_result
+            best = best_result(results)
+            if best:
+                st.success(f"✅ Best method: **{best.method_name}** — RMSE {best.rmse:.4f}")
+
+            # Overlay chart
+            st.plotly_chart(
+                forecast_overlay(df_price, results, selected),
+                use_container_width=True,
+            )
+
+            # Comparison table
+            st.subheader("Method Comparison")
+            st.dataframe(style_forecast_table(table), use_container_width=True)
+
+            # Per-method forecasts
+            with st.expander("Detailed forecast values"):
+                for r in results:
+                    if r.error is None and not r.forecasts.empty:
+                        st.markdown(f"**#{r.method_number} {r.method_name}** (RMSE={r.rmse:.4f})")
+                        st.dataframe(r.forecasts.rename("Forecast Price").to_frame(), use_container_width=True)
+
+elif not saved_forecasts.empty:
+    # Display stored results without re-running
+    st.subheader("Stored Forecast Values")
+
+    # Best method from saved file
+    if "RMSE" in saved_forecasts.columns and "Method_Name" in saved_forecasts.columns:
+        best_row = saved_forecasts.loc[saved_forecasts["RMSE"].idxmin()]
+        st.info(f"Best stored method: **{best_row['Method_Name']}** — RMSE {best_row['RMSE']:.4f}")
+
+    # Group by method and show the comparison
+    if "Method_Name" in saved_forecasts.columns and "RMSE" in saved_forecasts.columns:
+        summary = (saved_forecasts
+                   .groupby("Method_Name")
+                   .agg(RMSE=("RMSE", "first"), MAE=("MAE", "first"),
+                        MAPE=("MAPE", "first"), Points=("Forecast_Price", "count"))
+                   .reset_index()
+                   .sort_values("RMSE"))
+        st.dataframe(style_forecast_table(summary), use_container_width=True)
+
+    st.plotly_chart(price_line(df_price, selected), use_container_width=True)
+
+    with st.expander("Raw forecast table"):
+        st.dataframe(style_generic(saved_forecasts), use_container_width=True)
+
+else:
+    st.info(
+        f"No forecasts found for **{selected}**.\n\n"
+        "Click **Run All 12 Methods** above, or run `python cli/forecast.py --ticker {selected}` first."
+    )
+    if not df_price.empty:
+        st.plotly_chart(price_line(df_price, selected), use_container_width=True)

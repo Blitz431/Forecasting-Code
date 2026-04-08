@@ -5,7 +5,8 @@
       "Bash(pip install:*)",
       "Bash(python cli/indicators.py --ticker AAPL)",
       "Bash(python cli/ml.py --help)",
-      "Bash(python -m pytest tests/test_news/ -v)"
+      "Bash(python -m pytest tests/test_news/ -v)",
+      "Bash(python -c ':*)"
     ]
   }
 }
