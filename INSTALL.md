@@ -113,7 +113,7 @@ ALPACA_SECRET_KEY=your_alpaca_secret_here
 ```
 
 - **FRED API key** — free at https://fred.stlouisfed.org/docs/api/api_key.html
-- **Alpaca API key** — free paper trading account at https://alpaca.markets
+- **Alpaca API key** — free paper trading account at 
 
 Discord/Telegram keys are optional — only needed if you want those alert channels.
 

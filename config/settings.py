@@ -97,6 +97,24 @@ class Settings(BaseSettings):
     news_sentiment_window_days: int = 7  # rolling window for sentiment summary
     finbert_model: str = "ProsusAI/finbert"
 
+    # Political & Insider Trading (Phase 6)
+    political_congress_dir: Path = DATA_DIR / "political" / "congress"
+    political_insider_dir: Path = DATA_DIR / "political" / "insider"
+    quiver_base_url: str = "https://api.quiverquant.com/beta"
+    congress_lookback_days: int = 90    # how far back to fetch congressional trades
+    insider_lookback_days: int = 90     # how far back to fetch insider filings
+    insider_max_filings: int = 40       # max Form 4 filings to parse per ticker
+    edgar_rate_limit_delay: float = 0.15  # seconds between EDGAR requests (SEC: max 10/sec)
+
+    # Options & Calendar (Phase 7)
+    options_dir: Path = DATA_DIR / "options"
+    calendar_dir: Path = DATA_DIR / "calendar"
+    options_unusual_volume_multiplier: float = 2.0   # flag when volume > X * open_interest
+    options_iv_spike_threshold: float = 0.20         # flag IV when > hist_vol + 20pp
+    options_lookback_days: int = 30                  # hist vol window (trading days)
+    earnings_lookback_days: int = 365 * 3            # years of beat/miss history
+    earnings_upcoming_days: int = 30                 # how far ahead to flag earnings
+
     # Ranking
     top_n_picks: int = 20
 
