@@ -1,7 +1,11 @@
-"""Page 17 — Trading.
+"""Page 17 — Trading Controls.
 
-Live / paper trading controls, circuit breaker, and multi-strategy management.
-Full implementation in Phase 10.
+Live / paper trading dashboard using Phase 10 modules:
+- Alpaca account status and positions
+- Circuit breaker status with live arming and emergency stop
+- Multi-strategy capital allocation (Sharpe-weighted)
+- Risk parameters
+- One-click dry-run to preview what the trading loop would do
 """
 
 from __future__ import annotations
@@ -10,6 +14,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 import pandas as pd
+import plotly.express as px
 import streamlit as st
 
 from config.settings import get_settings
@@ -17,41 +22,27 @@ from dashboard.components.tables import style_generic
 
 st.set_page_config(page_title="Trading", page_icon="🔧", layout="wide")
 st.title("🔧 Trading Controls")
-st.caption("Paper and live trading via Alpaca — multi-strategy execution, circuit breaker, order management.")
+st.caption("Paper and live trading via Alpaca — account status, circuit breaker, multi-strategy management.")
 st.divider()
 
 settings = get_settings()
 
-# ---------------------------------------------------------------------------#
-# Phase note
-# ---------------------------------------------------------------------------#
-
-st.info(
-    "**Phase 10** implements:\n\n"
-    "- `src/trading/alpaca_client.py` — paper-first Alpaca wrapper\n"
-    "- `src/trading/strategy.py` — entry/exit rules + 5% trailing stop\n"
-    "- `src/trading/multi_strategy.py` — value/momentum/mean-reversion simultaneously\n"
-    "- `src/trading/circuit_breaker.py` — kill switch at -10% portfolio / -15% single stock\n"
-    "- `src/trading/risk.py` — position sizing, max 5% per stock\n\n"
-    "CLI: `python cli/trade.py --mode paper`"
-)
-
-st.divider()
 
 # ---------------------------------------------------------------------------#
-# Trading mode indicator
+# Trading mode banner
 # ---------------------------------------------------------------------------#
 
-mode_color = "🟡 Paper" if settings.trading_mode == "paper" else "🔴 LIVE"
-st.subheader(f"Trading Mode: {mode_color}")
+import os
+live_env = os.getenv("ALPACA_LIVE_TRADING", "").strip().lower() == "true"
+mode_label = "🔴 LIVE TRADING" if live_env else "🟡 PAPER TRADING"
 
-if settings.trading_mode == "live":
+if live_env:
     st.error(
-        "⚠️ **LIVE TRADING MODE ACTIVE** — real money at risk. "
-        "Circuit breaker armed. Set `TRADING_MODE=paper` in `.env` to switch to paper trading."
+        f"**{mode_label} MODE ACTIVE** — real money at risk.  "
+        "Unset `ALPACA_LIVE_TRADING` or set it to `false` in `.env` to return to paper."
     )
 else:
-    st.success("✅ Paper trading mode — no real money at risk.")
+    st.success(f"**{mode_label} MODE** — no real money at risk.")
 
 st.divider()
 
@@ -59,117 +50,331 @@ st.divider()
 # Alpaca account status
 # ---------------------------------------------------------------------------#
 
-st.subheader("Alpaca Account Status")
+st.subheader("Alpaca Account")
 
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=30, show_spinner="Fetching account …")
 def _fetch_account():
     if not settings.alpaca.api_key:
         return None, "API key not configured"
     try:
-        import alpaca_trade_api as tradeapi
-        api = tradeapi.REST(
-            settings.alpaca.api_key,
-            settings.alpaca.secret_key,
-            settings.alpaca.base_url,
-        )
-        return api.get_account(), None
+        from src.trading.alpaca_client import AlpacaClient
+        client = AlpacaClient(settings)
+        account = client.get_account()
+        return account, None
     except Exception as e:
         return None, str(e)
 
-account, err = _fetch_account()
 
-if err:
-    st.warning(f"Could not connect to Alpaca: {err}")
+@st.cache_data(ttl=30, show_spinner="Fetching positions …")
+def _fetch_positions():
     if not settings.alpaca.api_key:
-        st.markdown(
-            "Add API keys to `.env`:\n```\nALPACA_API_KEY=your_key\nALPACA_SECRET_KEY=your_secret\n```"
-        )
+        return []
+    try:
+        from src.trading.alpaca_client import AlpacaClient
+        client = AlpacaClient(settings)
+        return client.list_positions()
+    except Exception:
+        return []
+
+
+account, acct_err = _fetch_account()
+positions = _fetch_positions()
+
+if acct_err:
+    st.warning(f"Could not connect to Alpaca: {acct_err}")
+    if not settings.alpaca.api_key:
+        st.code("ALPACA_API_KEY=your_key\nALPACA_SECRET_KEY=your_secret", language="bash")
 else:
     col1, col2, col3, col4, col5 = st.columns(5)
-    col1.metric("Status",         account.status.upper())
-    col2.metric("Portfolio Value",f"${float(account.portfolio_value):,.2f}")
-    col3.metric("Cash",           f"${float(account.cash):,.2f}")
-    col4.metric("Buying Power",   f"${float(account.buying_power):,.2f}")
-    col5.metric("Day Trades Left",account.daytrade_count if hasattr(account, "daytrade_count") else "—")
+    col1.metric("Status",          account.status.upper())
+    col2.metric("Portfolio Value",  f"${account.portfolio_value:,.2f}")
+    col3.metric("Cash",             f"${account.cash:,.2f}")
+    col4.metric("Buying Power",     f"${account.buying_power:,.2f}")
+    col5.metric("Daily P&L",        f"${account.daily_pnl:+,.2f}",
+                delta=f"{account.daily_pnl_pct:+.2f}%",
+                delta_color="normal" if account.daily_pnl >= 0 else "inverse")
 
     if account.trading_blocked:
         st.error("⚠️ Trading is blocked on this account.")
     if account.account_blocked:
         st.error("⚠️ Account is blocked.")
+    if account.pattern_day_trader:
+        st.warning("⚠️ Pattern Day Trader (PDT) flag is set.")
 
 st.divider()
 
 # ---------------------------------------------------------------------------#
-# Circuit breaker status
+# Open positions
+# ---------------------------------------------------------------------------#
+
+st.subheader(f"Open Positions ({len(positions)})")
+
+if positions:
+    pos_rows = []
+    for p in positions:
+        pos_rows.append({
+            "Ticker":       p.ticker,
+            "Qty":          p.qty,
+            "Avg Entry":    f"${p.avg_entry_price:.2f}",
+            "Current":      f"${p.current_price:.2f}",
+            "Market Value": f"${p.market_value:,.2f}",
+            "Unrealized P&L": f"${p.unrealized_pl:+,.2f}",
+            "Unrealized %": f"{p.unrealized_plpc:+.2f}%",
+        })
+    pos_df = pd.DataFrame(pos_rows)
+    st.dataframe(style_generic(pos_df), use_container_width=True, hide_index=True)
+
+    # Mini chart: allocation by ticker
+    fig = px.pie(
+        values=[p.market_value for p in positions],
+        names=[p.ticker for p in positions],
+        title="Position Allocation",
+        hole=0.4,
+    )
+    fig.update_layout(template="plotly_dark", height=300)
+    st.plotly_chart(fig, use_container_width=True)
+else:
+    st.info("No open positions.")
+
+st.divider()
+
+# ---------------------------------------------------------------------------#
+# Circuit breaker
 # ---------------------------------------------------------------------------#
 
 st.subheader("🚨 Circuit Breaker")
 
-st.markdown(f"""
+@st.cache_data(ttl=10)
+def _cb_status():
+    try:
+        from src.trading.circuit_breaker import CircuitBreaker
+        cb = CircuitBreaker(settings)
+        return cb.status(), None
+    except Exception as e:
+        return None, str(e)
+
+
+cb_status, cb_err = _cb_status()
+
+if cb_err:
+    st.warning(f"Circuit breaker unavailable: {cb_err}")
+elif cb_status:
+    halted = cb_status["halted"]
+    open_val = cb_status.get("portfolio_open_value", 0.0)
+
+    # Status indicator
+    if halted:
+        st.error(
+            f"🛑 **HALTED** — {cb_status.get('halt_reason', 'Unknown reason')}  "
+            f"(at {cb_status.get('halt_time', '?')} UTC)"
+        )
+    else:
+        st.success("✅ Armed and monitoring")
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Opening Portfolio Value", f"${open_val:,.2f}" if open_val else "Not armed")
+    col2.metric("Daily Drop Limit",  f"{cb_status['daily_drop_threshold']:.0f}%")
+    col3.metric("Single-Stock Limit", f"{cb_status['single_stock_threshold']:.0f}%")
+
+    if cb_status.get("force_sells_today"):
+        st.warning(f"Force-sells today: {', '.join(cb_status['force_sells_today'])}")
+
+    # Thresholds table
+    st.markdown(f"""
 | Trigger | Threshold | Action |
 |---------|-----------|--------|
-| Portfolio daily drop | {settings.circuit_breaker_daily_pct:.0f}% | Halt all new trades |
-| Single stock loss | {settings.circuit_breaker_single_stock_pct:.0f}% | Force-sell position |
-| Manual emergency | Button below | Immediately flatten all positions |
+| Portfolio daily drop | {cb_status['daily_drop_threshold']:.0f}% | Halt all new orders |
+| Single stock loss from entry | {cb_status['single_stock_threshold']:.0f}% | Force-sell position |
+| Manual emergency | Button below | Flatten all positions immediately |
 """)
 
-col_arm, col_halt = st.columns(2)
-
-with col_arm:
-    st.metric("Circuit Breaker", "Armed ✅ (Phase 10)")
-
-with col_halt:
-    if st.button("🛑 EMERGENCY STOP — Flatten All Positions",
-                 type="primary",
-                 help="Phase 10: Will immediately submit sell orders for all open positions."):
-        st.error(
-            "Emergency stop will be implemented in Phase 10. "
-            "For now, log in to Alpaca directly to close positions."
-        )
+# Emergency stop button
+st.subheader("Emergency Stop")
+col_warn, col_btn = st.columns([3, 1])
+with col_warn:
+    st.warning(
+        "**Clicking EMERGENCY STOP will immediately close ALL open positions and cancel ALL orders.**  "
+        "This cannot be undone."
+    )
+with col_btn:
+    if st.button("🛑 EMERGENCY STOP", type="primary",
+                 help="Close every open position immediately via Alpaca"):
+        if not settings.alpaca.api_key:
+            st.error("Alpaca API key not configured.")
+        else:
+            with st.spinner("Executing emergency stop …"):
+                try:
+                    from src.trading.alpaca_client import AlpacaClient
+                    from src.trading.circuit_breaker import CircuitBreaker
+                    client = AlpacaClient(settings)
+                    cb = CircuitBreaker(settings)
+                    closed = cb.emergency_stop(client)
+                    if closed:
+                        st.error(f"Emergency stop executed — closed: {', '.join(closed)}")
+                    else:
+                        st.info("No positions were open at emergency stop.")
+                    st.cache_data.clear()
+                except Exception as e:
+                    st.error(f"Emergency stop failed: {e}")
 
 st.divider()
 
 # ---------------------------------------------------------------------------#
-# Planned strategy overview
+# Multi-strategy capital allocation
 # ---------------------------------------------------------------------------#
 
-st.subheader("Multi-Strategy Configuration (Phase 10)")
+st.subheader("Multi-Strategy Capital Allocation")
 
-col1, col2, col3 = st.columns(3)
-with col1:
-    st.markdown("""
-    **Value Strategy**
-    - Low P/S ratio
-    - High dividend yield
-    - Buy-and-hold horizon
-    - Capital allocation: 33%
-    """)
-with col2:
-    st.markdown("""
-    **Momentum Strategy**
-    - Top 20 composite picks
-    - Entry on breakout
-    - 5% trailing stop
-    - Capital allocation: 33%
-    """)
-with col3:
-    st.markdown("""
-    **Mean-Reversion Strategy**
-    - Bollinger Band touches
-    - RSI oversold bounces
-    - Short holding period
-    - Capital allocation: 33%
-    """)
+@st.cache_data(ttl=300)
+def _strategy_weights():
+    try:
+        from src.trading.multi_strategy import MultiStrategyManager
+        mgr = MultiStrategyManager(settings)
+        alloc = mgr.capital_weights()
+        return alloc, None
+    except Exception as e:
+        return None, str(e)
+
+
+alloc, alloc_err = _strategy_weights()
+
+if alloc_err:
+    st.warning(f"Could not compute strategy weights: {alloc_err}")
+else:
+    method_label = "Sharpe-weighted (rolling 12 weeks)" if alloc.method == "sharpe" else "Equal weight (< 4 weeks history)"
+    st.caption(f"Method: {method_label}")
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Value Strategy",         f"{alloc.value*100:.1f}%")
+    col2.metric("Momentum Strategy",      f"{alloc.momentum*100:.1f}%")
+    col3.metric("Mean-Reversion Strategy",f"{alloc.mean_reversion*100:.1f}%")
+
+    # Pie chart
+    fig_alloc = px.pie(
+        values=[alloc.value, alloc.momentum, alloc.mean_reversion],
+        names=["Value", "Momentum", "Mean-Reversion"],
+        title="Capital Split by Strategy",
+        hole=0.4,
+        color_discrete_sequence=["#26a69a", "#42a5f5", "#ffa726"],
+    )
+    fig_alloc.update_layout(template="plotly_dark", height=280)
+    st.plotly_chart(fig_alloc, use_container_width=True)
+
+    if account:
+        dollar_alloc = alloc.dollar_allocations(account.portfolio_value)
+        alloc_df = pd.DataFrame([
+            {"Strategy": "Value",         "Allocation %": f"{alloc.value*100:.1f}%",    "Capital ($)": f"${dollar_alloc['value']:,.0f}"},
+            {"Strategy": "Momentum",      "Allocation %": f"{alloc.momentum*100:.1f}%", "Capital ($)": f"${dollar_alloc['momentum']:,.0f}"},
+            {"Strategy": "Mean-Reversion","Allocation %": f"{alloc.mean_reversion*100:.1f}%","Capital ($)": f"${dollar_alloc['mean_reversion']:,.0f}"},
+        ])
+        st.dataframe(style_generic(alloc_df), use_container_width=True, hide_index=True)
 
 st.divider()
+
+# ---------------------------------------------------------------------------#
+# Risk parameters
+# ---------------------------------------------------------------------------#
 
 st.subheader("Risk Parameters")
 
-risk_df = pd.DataFrame([
-    {"Parameter": "Max position size", "Value": f"{settings.max_position_pct:.0f}% of portfolio"},
-    {"Parameter": "Trailing stop",     "Value": f"{settings.trailing_stop_pct:.0f}% after {settings.trailing_stop_days} profitable days"},
-    {"Parameter": "Circuit breaker",   "Value": f"Halt at {settings.circuit_breaker_daily_pct:.0f}% portfolio drop"},
-    {"Parameter": "Force-sell",        "Value": f"At {settings.circuit_breaker_single_stock_pct:.0f}% single-stock loss"},
-    {"Parameter": "Trading mode",      "Value": settings.trading_mode.upper()},
-])
-st.dataframe(style_generic(risk_df), use_container_width=True, hide_index=True)
+regime_label = "Unknown"
+try:
+    from src.analytics.market_regime import MarketRegimeAnalyzer
+    snap = MarketRegimeAnalyzer(settings).current_snapshot(compute_breadth=False)
+    regime_label = snap.regime.value
+    effective_max = settings.max_position_pct * (
+        settings.bear_regime_position_scale
+        if snap.regime.value in ("Bear", "High-Volatility") else 1.0
+    )
+except Exception:
+    effective_max = settings.max_position_pct
+
+risk_rows = [
+    {"Parameter": "Regime",                  "Value": regime_label},
+    {"Parameter": "Max position (normal)",   "Value": f"{settings.max_position_pct:.0f}%"},
+    {"Parameter": "Max position (Bear/HV)",  "Value": f"{settings.max_position_pct * settings.bear_regime_position_scale:.1f}%"},
+    {"Parameter": "Effective max now",        "Value": f"{effective_max:.1f}%"},
+    {"Parameter": "Trailing stop",           "Value": f"{settings.trailing_stop_pct:.0f}% after {settings.trailing_stop_days} profitable days"},
+    {"Parameter": "Circuit breaker (port.)", "Value": f"Halt at {settings.circuit_breaker_daily_pct:.0f}% daily drop"},
+    {"Parameter": "Force-sell (single)",     "Value": f"At {settings.circuit_breaker_single_stock_pct:.0f}% loss from entry"},
+    {"Parameter": "Kelly Criterion",         "Value": "Enabled" if settings.kelly_criterion_enabled else "Disabled (fixed % sizing)"},
+    {"Parameter": "Trading mode",            "Value": "LIVE" if live_env else "PAPER"},
+]
+st.dataframe(style_generic(pd.DataFrame(risk_rows)), use_container_width=True, hide_index=True)
+
+st.divider()
+
+# ---------------------------------------------------------------------------#
+# Dry-run preview
+# ---------------------------------------------------------------------------#
+
+st.subheader("Dry-Run Signal Preview")
+st.caption("Preview what the trading loop would do right now without placing any real orders.")
+
+if st.button("▶ Run Signal Preview (dry-run)"):
+    with st.spinner("Generating signals …"):
+        try:
+            from src.ranking.ranker import top_picks as get_top_picks
+            from src.utils.tickers import get_tickers
+            from src.trading.multi_strategy import MultiStrategyManager
+            from src.trading.risk import RiskManager
+
+            tickers = get_tickers(settings.ticker_source)
+            picks = get_top_picks(n=settings.top_n_picks, settings=settings,
+                                  include_ml=False, include_indicators=True,
+                                  tickers=tickers)
+            held = {p.ticker for p in positions}
+            pv = account.portfolio_value if account else 100_000.0
+
+            mgr = MultiStrategyManager(settings)
+            risk_mgr = RiskManager(settings)
+            all_sigs = mgr.generate_all_signals(picks, positions, pv, tickers=tickers)
+
+            rows = []
+            for strategy_name, signals in all_sigs.items():
+                for sig in signals:
+                    rows.append({
+                        "Strategy": strategy_name,
+                        "Action":   sig.action,
+                        "Ticker":   sig.ticker,
+                        "Score":    round(sig.score, 4),
+                        "Reason":   sig.reason,
+                    })
+            if rows:
+                sig_df = pd.DataFrame(rows)
+                st.metric("Signals generated", len(sig_df))
+                st.dataframe(style_generic(sig_df), use_container_width=True, hide_index=True)
+            else:
+                st.info("No signals generated (no qualifying picks or exits).")
+        except Exception as e:
+            st.error(f"Dry-run failed: {e}")
+
+st.divider()
+
+# ---------------------------------------------------------------------------#
+# Portfolio equity history
+# ---------------------------------------------------------------------------#
+
+st.subheader("Portfolio Equity History")
+
+@st.cache_data(ttl=300)
+def _equity_history():
+    try:
+        from src.trading.portfolio import PortfolioTracker
+        tracker = PortfolioTracker(settings)
+        return tracker.equity_history(), None
+    except Exception as e:
+        return pd.DataFrame(), str(e)
+
+
+equity_df, eq_err = _equity_history()
+if eq_err:
+    st.warning(f"Could not load equity history: {eq_err}")
+elif equity_df.empty:
+    st.info("No EOD portfolio snapshots yet. Snapshots are saved after each `cli/trade.py` run.")
+else:
+    fig_eq = px.line(equity_df, y="portfolio_value",
+                     title="Portfolio Value Over Time",
+                     labels={"portfolio_value": "Value ($)", "date": "Date"})
+    fig_eq.update_layout(template="plotly_dark", height=350)
+    st.plotly_chart(fig_eq, use_container_width=True)

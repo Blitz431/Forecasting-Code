@@ -115,6 +115,17 @@ class Settings(BaseSettings):
     earnings_lookback_days: int = 365 * 3            # years of beat/miss history
     earnings_upcoming_days: int = 30                 # how far ahead to flag earnings
 
+    # Trading — Phase 10 data paths
+    portfolio_snapshots_dir: Path = DATA_DIR / "portfolio" / "snapshots"
+    tax_lots_dir: Path = DATA_DIR / "tax_lots"
+    trade_journal_dir: Path = DATA_DIR / "trade_journal"
+    circuit_breaker_state_file: Path = DATA_DIR / "circuit_breaker_state.json"
+
+    # Trading — Phase 10 rules
+    kelly_criterion_enabled: bool = False
+    kelly_fraction: float = 0.25          # fractional Kelly (safety factor)
+    bear_regime_position_scale: float = 0.5  # reduce max_position_pct by this factor in Bear/High-Vol
+
     # Ranking
     top_n_picks: int = 20
 

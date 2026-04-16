@@ -16,7 +16,6 @@ Usage
 from __future__ import annotations
 
 import json
-import time
 from pathlib import Path
 from dataclasses import dataclass
 
@@ -32,7 +31,6 @@ import pandas as pd
 _STATIC_SECTORS: dict[str, str] = {
     # Technology
     "AAPL": "Technology", "MSFT": "Technology", "NVDA": "Technology",
-    "GOOGL": "Technology", "GOOG": "Technology", "META": "Technology",
     "AVGO": "Technology", "ORCL": "Technology", "CSCO": "Technology",
     "ACN": "Technology", "IBM": "Technology", "INTC": "Technology",
     "AMD": "Technology", "QCOM": "Technology", "TXN": "Technology",
