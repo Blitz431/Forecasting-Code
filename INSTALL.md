@@ -8,7 +8,7 @@ Run each `pip install` command in your terminal.
 ## Quick Install (all at once)
 
 ```
-pip install yfinance fredapi pyarrow pandas numpy openpyxl statsmodels scikit-learn xgboost lightgbm optuna shap ta alpaca-trade-api requests feedparser beautifulsoup4 transformers sentencepiece discord-webhook python-telegram-bot fpdf2 streamlit plotly python-dotenv pydantic-settings pydantic
+pip install yfinance fredapi pyarrow pandas numpy openpyxl statsmodels scikit-learn xgboost lightgbm optuna shap ta alpaca-trade-api requests feedparser beautifulsoup4 transformers sentencepiece discord-webhook python-telegram-bot fpdf2 streamlit plotly python-dotenv pydantic-settings pydantic apscheduler
 ```
 
 For PyTorch (GPU version for your NVIDIA 3060 Ti):
@@ -75,6 +75,11 @@ pip install pytest pytest-cov ruff
 | `discord-webhook` | `pip install discord-webhook` | Sends trade alerts and morning report summaries to a Discord channel |
 | `python-telegram-bot` | `pip install python-telegram-bot` | Sends alerts via Telegram bot |
 
+### Automation (Phase 12)
+| Package | Install | Why |
+|---------|---------|-----|
+| `apscheduler` | `pip install apscheduler` | Schedules the daily pipeline jobs by wall-clock time — scrape at 6 AM, indicators at 6:15, forecasts + ML at 6:30, morning report at 7 AM, EOD snapshot at 4 PM |
+
 ### Reports (Phase 11)
 | Package | Install | Why |
 |---------|---------|-----|
@@ -136,3 +141,4 @@ Install only what you need for the phase you're currently running:
 | 9 — Backtesting | no new packages |
 | 10 — Trading | + alpaca-trade-api |
 | 11 — Alerts & Reports | + discord-webhook, python-telegram-bot, fpdf2 |
+| 12 — Automation | + apscheduler |
