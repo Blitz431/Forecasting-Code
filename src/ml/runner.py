@@ -118,6 +118,42 @@ def _run_model(
         )
 
 
+def _sanitize_arrays(
+    X_train: np.ndarray,
+    y_train: np.ndarray,
+    X_test: np.ndarray,
+    y_test: np.ndarray,
+    ticker: str = "",
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Remove NaN/inf from train rows; impute NaN/inf in test with train medians.
+
+    This is a safety net — feature_engineer should produce clean arrays, but
+    edge cases (very short histories, all-zero volume windows, pandas NA in
+    integer columns) can still produce NaN after the float64 cast.
+    """
+    # ---- Training: drop any row with NaN or inf ----
+    train_finite = np.isfinite(X_train).all(axis=1) & np.isfinite(y_train)
+    n_bad_train = int((~train_finite).sum())
+    if n_bad_train:
+        logger.warning(f"[{ticker}] Dropping {n_bad_train} training rows with NaN/inf")
+        X_train = X_train[train_finite]
+        y_train = y_train[train_finite]
+
+    if len(X_train) == 0:
+        raise ValueError(f"[{ticker}] No valid training rows after NaN cleanup")
+
+    # ---- Test: impute NaN/inf columns using training column medians ----
+    col_medians = np.nanmedian(X_train, axis=0)
+    X_test = X_test.copy()
+    for j in range(X_test.shape[1]):
+        bad = ~np.isfinite(X_test[:, j])
+        if bad.any():
+            fill = col_medians[j] if np.isfinite(col_medians[j]) else 0.0
+            X_test[bad, j] = fill
+
+    return X_train, y_train, X_test, y_test
+
+
 def run_all_models(
     ticker: str,
     X: pd.DataFrame,
@@ -151,6 +187,9 @@ def run_all_models(
     # Train/test split
     split = settings_split(X, y, settings)
     X_train, y_train, X_test, y_test = apply_split(X, y, split)
+    X_train, y_train, X_test, y_test = _sanitize_arrays(
+        X_train, y_train, X_test, y_test, ticker
+    )
     feat_names = list(feature_names)
 
     logger.info(

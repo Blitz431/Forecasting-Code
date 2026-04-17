@@ -14,6 +14,7 @@ import streamlit as st
 from config.settings import get_settings
 from dashboard.components.charts import price_line, _empty_fig
 from dashboard.components.tables import style_ranking_table, style_generic
+from src.utils.input_sanitize import clean_ticker_list
 
 st.set_page_config(page_title="Peer Comparison", page_icon="⚖️", layout="wide")
 st.title("⚖️ Peer Comparison")
@@ -55,7 +56,11 @@ with col2:
     custom_peers = st.text_input("Custom peer list (comma-sep)", placeholder="AAPL,MSFT,NVDA")
 
 if custom_peers.strip():
-    peers = [t.strip().upper() for t in custom_peers.split(",") if t.strip()]
+    parsed_peers, rejected = clean_ticker_list(custom_peers)
+    if rejected:
+        st.warning(f"Ignored invalid peer(s): {', '.join(rejected[:10])}")
+    if parsed_peers:
+        peers = parsed_peers
 
 # Ensure primary ticker is in list
 if selected not in peers:

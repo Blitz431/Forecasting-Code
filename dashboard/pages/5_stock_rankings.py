@@ -14,6 +14,7 @@ import streamlit as st
 from config.settings import get_settings
 from dashboard.components.charts import ranking_bar, score_breakdown
 from dashboard.components.tables import style_ranking_table
+from src.utils.input_sanitize import clean_ticker_list
 
 st.set_page_config(page_title="Stock Rankings", page_icon="🏆", layout="wide")
 st.title("🏆 Stock Rankings")
@@ -62,7 +63,11 @@ def _compute_rankings(
 
     tickers = None
     if custom.strip():
-        tickers = [t.strip().upper() for t in custom.split(",") if t.strip()]
+        tickers, rejected = clean_ticker_list(custom)
+        if rejected:
+            st.warning(f"Ignored {len(rejected)} invalid ticker(s): {', '.join(rejected[:10])}")
+        if not tickers:
+            tickers = None
 
     picks = top_picks(
         n=top_n,

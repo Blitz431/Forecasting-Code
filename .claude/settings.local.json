@@ -6,7 +6,10 @@
       "Bash(python cli/indicators.py --ticker AAPL)",
       "Bash(python cli/ml.py --help)",
       "Bash(python -m pytest tests/test_news/ -v)",
-      "Bash(python -c ':*)"
+      "Bash(python -c ':*)",
+      "Bash(python -c ' *)",
+      "Bash(python -m pytest tests/ -q --no-header)",
+      "Bash(python -c \" import ast, pathlib for f in ['src/alerts/notifier.py','config/settings.py','cli/report.py']: ast.parse\\(pathlib.Path\\(f\\).read_text\\(encoding='utf-8'\\)\\) print\\('OK', f\\) \")"
     ]
   }
 }

@@ -14,6 +14,7 @@ import streamlit as st
 from config.settings import get_settings
 from dashboard.components.charts import earnings_timeline
 from dashboard.components.tables import style_earnings_table, style_generic
+from src.utils.input_sanitize import clean_ticker
 
 st.set_page_config(page_title="Calendar", page_icon="📅", layout="wide")
 st.title("📅 Earnings & Economic Calendar")
@@ -67,8 +68,10 @@ with st.sidebar:
                                   placeholder="AAPL")
 
 # Fetch button
-if fetch_ticker.strip():
-    t = fetch_ticker.strip().upper()
+t = clean_ticker(fetch_ticker)
+if fetch_ticker.strip() and not t:
+    st.sidebar.warning(f"Invalid ticker: {fetch_ticker!r}")
+if t:
     if st.sidebar.button(f"Fetch {t} Earnings"):
         with st.spinner(f"Fetching earnings data for {t} …"):
             try:

@@ -3,7 +3,7 @@
 Usage
 -----
     python cli/report.py --morning
-        Generate today's PDF + Excel report, then send a Discord/Telegram summary
+        Generate today's PDF + Excel report, then send a Discord summary
         (title + top 3 picks + regime).
 
     python cli/report.py --alerts
@@ -36,7 +36,7 @@ logger = setup_logger(__name__)
 # ---------------------------------------------------------------------------#
 
 def cmd_morning(settings) -> int:
-    """Generate PDF + Excel report and send a Discord/Telegram summary."""
+    """Generate PDF + Excel report and send a Discord summary."""
     from src.reports.morning_report import MorningReport
     from src.alerts.notifier import AlertNotifier
 
@@ -52,8 +52,7 @@ def cmd_morning(settings) -> int:
         logger.error(f"Morning report generation failed: {exc}")
         return 1
 
-    # Send summary to Discord / Telegram
-    print("[report] Sending Discord/Telegram summary...")
+    print("[report] Sending Discord summary...")
     title, body = report.discord_summary()
 
     notifier = AlertNotifier(settings)
@@ -115,7 +114,7 @@ def cmd_test_notify(settings) -> int:
 
     if not any_sent:
         print("\n  No channels sent. Check your .env credentials:")
-        print("    DISCORD_WEBHOOK_URL, TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID,")
+        print("    DISCORD_WEBHOOK_URL,")
         print("    SMTP_HOST + SMTP_USER + SMTP_PASSWORD + ALERT_EMAIL_TO")
 
     return 0 if any_sent else 1
@@ -136,7 +135,7 @@ def main() -> int:
     group.add_argument(
         "--morning",
         action="store_true",
-        help="Generate PDF + Excel morning report and send summary to Discord/Telegram",
+        help="Generate PDF + Excel morning report and send summary to Discord",
     )
     group.add_argument(
         "--alerts",

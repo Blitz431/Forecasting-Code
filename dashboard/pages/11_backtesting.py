@@ -198,7 +198,7 @@ if eq_df is not None and not eq_df.empty:
     for label, date_str in events.items():
         ts = pd.Timestamp(date_str)
         if eq_series.index.min() <= ts <= eq_series.index.max():
-            fig_eq.add_vline(x=date_str, line_dash="dash", line_color="#555",
+            fig_eq.add_vline(x=ts.value // 10**6, line_dash="dash", line_color="#555",
                              annotation_text=label, annotation_position="top right",
                              annotation_font_color="#999")
 

@@ -335,17 +335,17 @@ def build_features(
     # ---- Align y with X ----
     X, y = X.align(y, join="left", axis=0)
 
+    # Ensure all columns are float64 so pd.NA (pandas 3.x integer columns) is
+    # converted to np.nan before the notna() check runs.
+    X = X.astype(np.float64)
+
+    # Replace inf values produced by pct_change / division on zeros.
+    X = X.replace([np.inf, -np.inf], np.nan)
+
     if drop_na:
         valid = X.notna().all(axis=1) & y.notna()
-        X = X[valid]
-        y = y[valid]
-
-    # Replace any remaining inf values (from pct_change on zeros)
-    X = X.replace([np.inf, -np.inf], np.nan)
-    if drop_na:
-        valid = X.notna().all(axis=1)
-        X = X[valid]
-        y = y[X.index]
+        X = X.loc[valid]
+        y = y.loc[valid]
 
     feature_names = list(X.columns)
     logger.info(
