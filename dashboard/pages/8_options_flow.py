@@ -38,8 +38,8 @@ if not all_tickers:
 
 col1, _ = st.columns([2, 2])
 with col1:
-    selected = st.selectbox("Ticker", all_tickers,
-                             index=all_tickers.index("AAPL") if "AAPL" in all_tickers else 0)
+    default_idx = all_tickers.index("AAPL") if "AAPL" in all_tickers else 0
+    selected = st.selectbox("Ticker", all_tickers, index=default_idx, key="options_ticker_select")
 
 # ---------------------------------------------------------------------------#
 # Load data

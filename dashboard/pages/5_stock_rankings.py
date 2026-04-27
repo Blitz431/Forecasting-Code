@@ -128,10 +128,10 @@ with tab_chart:
     st.plotly_chart(ranking_bar(df, top_n=top_n), use_container_width=True)
 
 with tab_table:
-    # Identify signal columns
-    score_cols = ["Score", "Forecast", "Indicators", "ML", "News",
-                  "Short Int.", "Congress", "Insider", "Options", "IV", "Earnings"]
-    avail_cols = [c for c in ["Rank", "Ticker", "Score", "Signals"] + score_cols if c in df.columns]
+    # Identify signal columns (Score already in the base list — exclude from signal_cols to avoid duplicates)
+    signal_cols = ["Forecast", "Indicators", "ML", "News",
+                   "Short Int.", "Congress", "Insider", "Options", "IV", "Earnings"]
+    avail_cols = [c for c in ["Rank", "Ticker", "Score", "Signals"] + signal_cols if c in df.columns]
     st.dataframe(style_ranking_table(df[avail_cols]), use_container_width=True)
 
 st.divider()
