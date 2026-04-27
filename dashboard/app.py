@@ -31,6 +31,15 @@ st.set_page_config(
 # ---------------------------------------------------------------------------#
 
 st.title("📈 AutoStockAnalyzer")
+
+st.warning(
+    "**Disclaimer:** This tool is for educational and analytical purposes only. "
+    "Nothing on this platform constitutes financial advice, investment recommendations, "
+    "or an offer to buy or sell any security. Always consult a qualified financial "
+    "professional before making investment decisions. Past performance does not guarantee future results.",
+    icon="⚠️",
+)
+
 st.markdown(
     """
     **Automated stock analysis, forecasting, and ranking for the S&P 500.**
