@@ -4,7 +4,6 @@ Supports both batch backfill (from 2015) and incremental daily updates.
 Uses batched yf.download() for efficiency.
 """
 
-import time
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -17,10 +16,6 @@ from src.utils.logging import setup_logger
 from src.utils.validation import validate_ohlcv
 
 logger = setup_logger(__name__)
-
-_BATCH_DELAY_SECONDS = 3      # pause between batches to avoid rate limits
-_MAX_RETRIES = 3              # retry a failed batch this many times
-_RETRY_DELAY_SECONDS = 10     # wait before retrying a rate-limited batch
 
 
 def download_batch(
@@ -48,27 +43,17 @@ def download_batch(
 
     logger.info(f"Downloading {len(tickers)} tickers from {start} to {end}")
 
-    data = pd.DataFrame()
-    for attempt in range(1, _MAX_RETRIES + 1):
-        try:
-            data = yf.download(
-                tickers=tickers,
-                start=start,
-                end=end,
-                group_by="ticker",
-                auto_adjust=True,
-                progress=False,
-            )
-            if not data.empty:
-                break
-            logger.warning(f"Batch returned empty data (attempt {attempt}/{_MAX_RETRIES})")
-        except Exception as e:
-            logger.warning(f"Batch download error (attempt {attempt}/{_MAX_RETRIES}): {e}")
-        if attempt < _MAX_RETRIES:
-            time.sleep(_RETRY_DELAY_SECONDS)
-
-    if data.empty:
-        logger.error(f"Batch failed after {_MAX_RETRIES} attempts — skipping {len(tickers)} tickers")
+    try:
+        data = yf.download(
+            tickers=tickers,
+            start=start,
+            end=end,
+            group_by="ticker",
+            auto_adjust=True,
+            threads=True,
+        )
+    except Exception as e:
+        logger.error(f"Batch download failed: {e}")
         return {}
 
     results = {}
@@ -154,13 +139,10 @@ def scrape_prices(
     # Process backfill tickers in batches
     if backfill_tickers:
         start_date = f"{settings.backfill_start_year}-01-01"
-        total_batches = (len(backfill_tickers) + batch_size - 1) // batch_size
-        logger.info(f"Backfilling {len(backfill_tickers)} tickers in {total_batches} batches from {start_date}")
+        logger.info(f"Backfilling {len(backfill_tickers)} tickers from {start_date}")
 
         for i in range(0, len(backfill_tickers), batch_size):
             batch = backfill_tickers[i : i + batch_size]
-            batch_num = i // batch_size + 1
-            logger.info(f"Batch {batch_num}/{total_batches} — tickers {i+1}–{min(i+batch_size, len(backfill_tickers))}")
             data = download_batch(batch, start=start_date)
 
             for ticker, df in data.items():
@@ -168,10 +150,6 @@ def scrape_prices(
                     filepath = get_ticker_filepath(ticker, data_dir)
                     upsert_dataframe(df, filepath)
                     results[ticker] = len(df)
-
-            logger.info(f"Batch {batch_num}/{total_batches} done — {len(results)} tickers saved so far")
-            if i + batch_size < len(backfill_tickers):
-                time.sleep(_BATCH_DELAY_SECONDS)
 
     # Process incremental tickers
     for start, ticker_group in incremental_groups.items():
@@ -188,9 +166,6 @@ def scrape_prices(
                     filepath = get_ticker_filepath(ticker, data_dir)
                     upsert_dataframe(df, filepath)
                     results[ticker] = len(df)
-
-            if i + batch_size < len(ticker_group):
-                time.sleep(_BATCH_DELAY_SECONDS)
 
     logger.info(f"Price scrape complete: {len(results)} tickers updated")
     return results

@@ -5,16 +5,6 @@ Run each `pip install` command in your terminal.
 
 ---
 
-## Launching the App
-
-Double-click **`Launch App.bat`** in the project root, or run from the terminal:
-
-```
-streamlit run dashboard/app.py
-```
-
----
-
 ## Quick Install (all at once)
 
 ```
@@ -98,7 +88,7 @@ pip install pytest pytest-cov ruff
 | Package | Install | Why |
 |---------|---------|-----|
 | `streamlit` | `pip install streamlit` | Runs the web dashboard — `streamlit run dashboard/app.py` |
-| `plotly` | `pip install plotly` | Interactive charts used throughout all 20 dashboard pages |
+| `plotly` | `pip install plotly` | Interactive charts used throughout all 17 dashboard pages |
 
 ### Config (All Phases)
 | Package | Install | Why |

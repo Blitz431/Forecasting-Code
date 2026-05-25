@@ -367,8 +367,6 @@ Phase 8 — Ranking + Dashboard
   dashboard/app.py + pages/
     reads from: ALL data/ directories
     runs as:    streamlit run dashboard/app.py
-    pages 1–19: feature modules (data, forecasting, ML, news, trading, etc.)
-    page 20:    Settings — API key editor, scraper launcher, thresholds, paths
 
 Phase 9 — Backtesting & Analytics
   src/trading/backtester.py

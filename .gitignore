@@ -48,4 +48,3 @@ logs/
 
 # Claude
 .claude/
-.claude/settings.local.json
