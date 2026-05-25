@@ -33,6 +33,33 @@ from src.utils.logging import setup_logger
 
 logger = setup_logger(__name__)
 
+# fpdf2's default Helvetica font uses latin-1 encoding and cannot render
+# em/en-dashes, smart quotes, or other common Unicode punctuation. Map them
+# to ASCII equivalents before passing any string to pdf.cell/multi_cell.
+_PDF_REPLACEMENTS = {
+    "\u2014": "-",    # em-dash
+    "\u2013": "-",    # en-dash
+    "\u2018": "'",    # left single quote
+    "\u2019": "'",    # right single quote / apostrophe
+    "\u201c": '"',    # left double quote
+    "\u201d": '"',    # right double quote
+    "\u2026": "...",  # ellipsis
+    "\u00a0": " ",    # non-breaking space
+    "\u2022": "*",    # bullet
+}
+
+
+def _pdf_safe(text) -> str:
+    """Return a latin-1-safe version of ``text`` for fpdf2 Helvetica."""
+    if text is None:
+        return ""
+    s = str(text)
+    for src, dst in _PDF_REPLACEMENTS.items():
+        if src in s:
+            s = s.replace(src, dst)
+    # Final fallback: drop any remaining non-latin-1 characters.
+    return s.encode("latin-1", errors="replace").decode("latin-1")
+
 # ---------------------------------------------------------------------------#
 # Section data builders (each returns a DataFrame or dict)
 # ---------------------------------------------------------------------------#
@@ -166,13 +193,13 @@ def _build_pdf(
         pdf.set_font("Helvetica", "B", 13)
         pdf.set_fill_color(40, 40, 80)
         pdf.set_text_color(255, 255, 255)
-        pdf.cell(0, 8, text, new_x="LMARGIN", new_y="NEXT", fill=True)
+        pdf.cell(0, 8, _pdf_safe(text), new_x="LMARGIN", new_y="NEXT", fill=True)
         pdf.set_text_color(0, 0, 0)
         pdf.ln(2)
 
     def body_text(text: str, bold: bool = False):
         pdf.set_font("Helvetica", "B" if bold else "", 10)
-        pdf.multi_cell(0, 6, text)
+        pdf.multi_cell(0, 6, _pdf_safe(text))
         pdf.ln(1)
 
     def dataframe_table(df: pd.DataFrame, col_widths: list[float] | None = None):
@@ -187,7 +214,7 @@ def _build_pdf(
         w = col_widths if col_widths else [pdf.epw / n] * n
 
         for i, col in enumerate(cols):
-            pdf.cell(w[i], 6, str(col)[:20], border=1, fill=True)
+            pdf.cell(w[i], 6, _pdf_safe(str(col)[:20]), border=1, fill=True)
         pdf.ln()
 
         pdf.set_font("Helvetica", "", 8)
@@ -198,15 +225,15 @@ def _build_pdf(
                     cell_str = f"{val:.2f}" if abs(val) < 1_000_000 else f"{val:,.0f}"
                 else:
                     cell_str = str(val)[:22] if val is not None else ""
-                pdf.cell(w[i], 5, cell_str, border=1)
+                pdf.cell(w[i], 5, _pdf_safe(cell_str), border=1)
             pdf.ln()
         pdf.ln(3)
 
     # ---- Section 1: Header ----
     pdf.set_font("Helvetica", "B", 18)
-    pdf.cell(0, 12, "AutoStockAnalyzer — Morning Report", new_x="LMARGIN", new_y="NEXT", align="C")
+    pdf.cell(0, 12, _pdf_safe("AutoStockAnalyzer - Morning Report"), new_x="LMARGIN", new_y="NEXT", align="C")
     pdf.set_font("Helvetica", "", 11)
-    pdf.cell(0, 7, f"Generated: {report_date}", new_x="LMARGIN", new_y="NEXT", align="C")
+    pdf.cell(0, 7, _pdf_safe(f"Generated: {report_date}"), new_x="LMARGIN", new_y="NEXT", align="C")
     pdf.ln(4)
 
     section_title("1. Market Overview")

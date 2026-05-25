@@ -154,5 +154,5 @@ with col_right:
         st.info(
             "No alerts log yet.  "
             "Critical alerts are written here automatically when triggered.  "
-            "Configure Discord / Telegram / email in `.env` to enable notifications."
+            "Configure Discord or email in `.env` to enable notifications."
         )

@@ -188,8 +188,9 @@ def compute_options_metrics(ticker: str) -> dict:
         "flow_signal": float(flow_signal),
     })
 
+    pcr_str = f"{pcr:.3f}" if pcr is not None else "N/A"
     logger.info(
-        f"[{ticker}] PCR={pcr:.3f if pcr is not None else 'N/A'} "
+        f"[{ticker}] PCR={pcr_str} "
         f"call_vol={call_vol} put_vol={put_vol} unusual={unusual}"
     )
     return result

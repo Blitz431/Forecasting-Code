@@ -14,6 +14,7 @@ import streamlit as st
 from config.settings import get_settings
 from dashboard.components.charts import ranking_bar, score_breakdown
 from dashboard.components.tables import style_ranking_table
+from src.utils.input_sanitize import clean_ticker_list
 
 st.set_page_config(page_title="Stock Rankings", page_icon="🏆", layout="wide")
 st.title("🏆 Stock Rankings")
@@ -62,7 +63,11 @@ def _compute_rankings(
 
     tickers = None
     if custom.strip():
-        tickers = [t.strip().upper() for t in custom.split(",") if t.strip()]
+        tickers, rejected = clean_ticker_list(custom)
+        if rejected:
+            st.warning(f"Ignored {len(rejected)} invalid ticker(s): {', '.join(rejected[:10])}")
+        if not tickers:
+            tickers = None
 
     picks = top_picks(
         n=top_n,
@@ -123,10 +128,10 @@ with tab_chart:
     st.plotly_chart(ranking_bar(df, top_n=top_n), use_container_width=True)
 
 with tab_table:
-    # Identify signal columns
-    score_cols = ["Score", "Forecast", "Indicators", "ML", "News",
-                  "Short Int.", "Congress", "Insider", "Options", "IV", "Earnings"]
-    avail_cols = [c for c in ["Rank", "Ticker", "Score", "Signals"] + score_cols if c in df.columns]
+    # Identify signal columns (Score already in the base list — exclude from signal_cols to avoid duplicates)
+    signal_cols = ["Forecast", "Indicators", "ML", "News",
+                   "Short Int.", "Congress", "Insider", "Options", "IV", "Earnings"]
+    avail_cols = [c for c in ["Rank", "Ticker", "Score", "Signals"] + signal_cols if c in df.columns]
     st.dataframe(style_ranking_table(df[avail_cols]), use_container_width=True)
 
 st.divider()

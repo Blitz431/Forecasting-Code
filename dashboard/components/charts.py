@@ -60,6 +60,21 @@ def _apply_base(fig: go.Figure, title: str = "") -> go.Figure:
     return fig
 
 
+def _merged_layout(**overrides) -> dict:
+    """Merge caller overrides into _LAYOUT_BASE without duplicating kwargs.
+
+    xaxis/yaxis are deep-merged so callers can add fields (e.g. ``range``)
+    without losing the base grid styling.
+    """
+    layout = {k: v for k, v in _LAYOUT_BASE.items()}
+    for key, val in overrides.items():
+        if key in ("xaxis", "yaxis") and isinstance(val, dict):
+            layout[key] = {**_LAYOUT_BASE.get(key, {}), **val}
+        else:
+            layout[key] = val
+    return layout
+
+
 # ---------------------------------------------------------------------------#
 # Price charts
 # ---------------------------------------------------------------------------#
@@ -212,13 +227,12 @@ def ranking_bar(df: pd.DataFrame, top_n: int = 20) -> go.Figure:
         text=[f"{s:.3f}" for s in df["Score"]],
         textposition="outside",
     ))
-    fig.update_layout(
-        **_LAYOUT_BASE,
+    fig.update_layout(**_merged_layout(
         title=f"Top {top_n} Composite Scores",
-        yaxis=dict(autorange="reversed", gridcolor=_GRID),
-        xaxis=dict(range=[-1.1, 1.1], gridcolor=_GRID),
+        yaxis=dict(autorange="reversed"),
+        xaxis=dict(range=[-1.1, 1.1]),
         height=max(400, top_n * 28),
-    )
+    ))
     return fig
 
 
@@ -238,11 +252,10 @@ def score_breakdown(signals: dict[str, float], ticker: str = "") -> go.Figure:
         text=[f"{v:+.3f}" for v in values],
         textposition="outside",
     ))
-    fig.update_layout(
-        **_LAYOUT_BASE,
+    fig.update_layout(**_merged_layout(
         title=f"{ticker} — Signal Breakdown",
-        yaxis=dict(range=[-1.2, 1.2], gridcolor=_GRID),
-    )
+        yaxis=dict(range=[-1.2, 1.2]),
+    ))
     return fig
 
 
@@ -395,12 +408,11 @@ def feature_importance(feat_df: pd.DataFrame, top_n: int = 20) -> go.Figure:
         orientation="h",
         marker_color=_PURPLE,
     ))
-    fig.update_layout(
-        **_LAYOUT_BASE,
+    fig.update_layout(**_merged_layout(
         title=f"Top {top_n} Feature Importances",
         yaxis=dict(autorange="reversed"),
         height=max(400, top_n * 25),
-    )
+    ))
     return fig
 
 
@@ -455,13 +467,12 @@ def earnings_timeline(df: pd.DataFrame) -> go.Figure:
         textposition="middle right",
         marker=dict(color=_ORANGE, size=10, symbol="diamond"),
     ))
-    fig.update_layout(
-        **_LAYOUT_BASE,
+    fig.update_layout(**_merged_layout(
         title="Upcoming Earnings",
         xaxis_title="Date",
         yaxis_title="Ticker",
         height=max(300, len(df) * 25),
-    )
+    ))
     return fig
 
 

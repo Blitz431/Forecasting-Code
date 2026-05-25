@@ -26,8 +26,6 @@ class FredSettings(BaseSettings):
 
 class AlertSettings(BaseSettings):
     discord_webhook_url: str = ""
-    telegram_bot_token: str = ""
-    telegram_chat_id: str = ""
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_user: str = ""

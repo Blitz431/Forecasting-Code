@@ -16,6 +16,7 @@ import streamlit as st
 from config.settings import get_settings
 from dashboard.components.charts import price_line, signal_heatmap, _empty_fig
 from dashboard.components.tables import style_ranking_table, style_signal_table, style_generic
+from src.utils.input_sanitize import clean_ticker
 
 st.set_page_config(page_title="Watchlist", page_icon="👁️", layout="wide")
 st.title("👁️ Watchlist")
@@ -42,11 +43,15 @@ if "watchlist" not in st.session_state:
 col1, col2, col3 = st.columns([2, 1, 1])
 
 with col1:
-    add_ticker = st.text_input("Add ticker", placeholder="e.g. NVDA").strip().upper()
+    raw_ticker = st.text_input("Add ticker", placeholder="e.g. NVDA")
+    add_ticker = clean_ticker(raw_ticker) or ""
 
 with col2:
-    if st.button("➕ Add", type="primary") and add_ticker:
-        if wm.add(add_ticker):
+    if st.button("➕ Add", type="primary"):
+        if not add_ticker:
+            if raw_ticker.strip():
+                st.warning(f"Invalid ticker: {raw_ticker!r}")
+        elif wm.add(add_ticker):
             st.session_state.watchlist = wm.load()
             st.success(f"Added {add_ticker}")
         else:

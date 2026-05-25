@@ -23,8 +23,13 @@ def get_sp500_tickers() -> list[str]:
         List of ticker symbols.
     """
     try:
+        import requests
+        from io import StringIO
         url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
-        tables = pd.read_html(url)
+        headers = {"User-Agent": "Mozilla/5.0 AutoStockAnalyzer/1.0"}
+        resp = requests.get(url, headers=headers, timeout=15)
+        resp.raise_for_status()
+        tables = pd.read_html(StringIO(resp.text))
         df = tables[0]
         tickers = df["Symbol"].str.replace(".", "-", regex=False).tolist()
         logger.info(f"Fetched {len(tickers)} S&P 500 tickers from Wikipedia")

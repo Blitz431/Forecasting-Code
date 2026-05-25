@@ -139,6 +139,18 @@ class MLModel(ABC):
 
         preds = self.predict(X_test)
 
+        # Deep-learning models pad the first (seq_len-1) outputs with NaN
+        # because a sliding window can't produce predictions for those rows.
+        # Drop those NaN positions from both arrays before computing metrics.
+        valid = np.isfinite(preds) & np.isfinite(y_test)
+        if not valid.all():
+            preds = preds[valid]
+            y_test = y_test[valid]
+
+        if len(preds) == 0:
+            raise ValueError("No finite predictions after NaN filtering — "
+                             "test set may be shorter than seq_len")
+
         rmse = float(np.sqrt(mean_squared_error(y_test, preds)))
         mae = float(mean_absolute_error(y_test, preds))
 

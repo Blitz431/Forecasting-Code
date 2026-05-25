@@ -31,6 +31,15 @@ st.set_page_config(
 # ---------------------------------------------------------------------------#
 
 st.title("📈 AutoStockAnalyzer")
+
+st.warning(
+    "**Disclaimer:** This tool is for educational and analytical purposes only. "
+    "Nothing on this platform constitutes financial advice, investment recommendations, "
+    "or an offer to buy or sell any security. Always consult a qualified financial "
+    "professional before making investment decisions. Past performance does not guarantee future results.",
+    icon="⚠️",
+)
+
 st.markdown(
     """
     **Automated stock analysis, forecasting, and ranking for the S&P 500.**
@@ -85,20 +94,18 @@ def _fast_top10():
     return to_dataframe(picks)
 
 if st.button("Run Fast Ranking", type="primary"):
-    with st.spinner("Ranking stocks …"):
-        df = _fast_top10()
-    if df.empty:
-        st.warning(
-            "No picks found. Ensure you have scraped data first:\n\n"
-            "`python cli/scrape.py --backfill 2015`"
-        )
-    else:
-        from dashboard.components.charts import ranking_bar
-        from dashboard.components.tables import style_ranking_table
-        st.plotly_chart(ranking_bar(df, top_n=10), use_container_width=True)
-        st.dataframe(style_ranking_table(df), use_container_width=True)
-else:
+    st.cache_data.clear()
+
+with st.spinner("Loading rankings …"):
+    df = _fast_top10()
+
+if df.empty:
     st.info("Click **Run Fast Ranking** to compute composite scores for all tickers.")
+else:
+    from dashboard.components.charts import ranking_bar
+    from dashboard.components.tables import style_ranking_table
+    st.plotly_chart(ranking_bar(df, top_n=10), use_container_width=True)
+    st.dataframe(style_ranking_table(df), use_container_width=True)
 
 st.divider()
 

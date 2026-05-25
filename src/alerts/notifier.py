@@ -3,7 +3,6 @@
 Supported channels
 ------------------
 - Discord  : discord-webhook  (DISCORD_WEBHOOK_URL in .env)
-- Telegram : python-telegram-bot  (TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID)
 - Email    : smtplib  (SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASSWORD / ALERT_EMAIL_TO)
 
 All credentials are loaded from ``config/settings.py`` → ``AlertSettings``,
@@ -60,7 +59,7 @@ _LEVEL_EMOJI: dict[str, str] = {
 # ---------------------------------------------------------------------------#
 
 class AlertNotifier:
-    """Dispatch alerts to Discord, Telegram, and/or email in parallel."""
+    """Dispatch alerts to Discord and/or email in parallel."""
 
     def __init__(self, settings=None):
         if settings is None:
@@ -96,14 +95,13 @@ class AlertNotifier:
             self._log_to_file(title, body)
 
         senders = {
-            "discord":  self._send_discord,
-            "telegram": self._send_telegram,
-            "email":    self._send_email,
+            "discord": self._send_discord,
+            "email":   self._send_email,
         }
 
         results: dict[str, bool] = {}
 
-        with ThreadPoolExecutor(max_workers=3) as pool:
+        with ThreadPoolExecutor(max_workers=2) as pool:
             futures = {
                 pool.submit(fn, title, body, level): name
                 for name, fn in senders.items()
@@ -163,41 +161,6 @@ class AlertNotifier:
             return False
 
     # ---------------------------------------------------------------------- #
-    # Telegram
-    # ---------------------------------------------------------------------- #
-
-    def _send_telegram(self, title: str, body: str, level: str) -> bool:
-        """Send a Telegram message via bot. Returns True on success."""
-        token = self._a.telegram_bot_token
-        chat_id = self._a.telegram_chat_id
-        if not token or not chat_id:
-            return False
-
-        try:
-            import asyncio
-            from telegram import Bot
-
-            emoji = _LEVEL_EMOJI.get(level, "")
-            text = (
-                f"{emoji} <b>{_escape_html(title)}</b>\n\n"
-                f"{_escape_html(body)}"
-            )
-
-            async def _send():
-                bot = Bot(token=token)
-                await bot.send_message(
-                    chat_id=chat_id,
-                    text=text[:4096],
-                    parse_mode="HTML",
-                )
-
-            asyncio.run(_send())
-            return True
-        except Exception as exc:
-            logger.error(f"[Telegram] send failed: {exc}")
-            return False
-
-    # ---------------------------------------------------------------------- #
     # Email
     # ---------------------------------------------------------------------- #
 
@@ -252,10 +215,3 @@ class AlertNotifier:
 # Helpers
 # ---------------------------------------------------------------------------#
 
-def _escape_html(text: str) -> str:
-    """Escape HTML special characters for Telegram parse_mode=HTML."""
-    return (
-        text.replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-    )

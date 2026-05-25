@@ -18,7 +18,7 @@ streamlit run dashboard/app.py
 ## Quick Install (all at once)
 
 ```
-pip install yfinance fredapi pyarrow pandas numpy openpyxl statsmodels scikit-learn xgboost lightgbm optuna shap ta alpaca-trade-api requests feedparser beautifulsoup4 transformers sentencepiece discord-webhook python-telegram-bot fpdf2 streamlit plotly python-dotenv pydantic-settings pydantic apscheduler
+pip install yfinance fredapi pyarrow pandas numpy openpyxl statsmodels scikit-learn xgboost lightgbm optuna shap ta alpaca-trade-api requests feedparser beautifulsoup4 transformers sentencepiece discord-webhook fpdf2 python-docx streamlit plotly python-dotenv pydantic-settings pydantic apscheduler
 ```
 
 For PyTorch (GPU version for your NVIDIA 3060 Ti):
@@ -83,7 +83,6 @@ pip install pytest pytest-cov ruff
 | Package | Install | Why |
 |---------|---------|-----|
 | `discord-webhook` | `pip install discord-webhook` | Sends trade alerts and morning report summaries to a Discord channel |
-| `python-telegram-bot` | `pip install python-telegram-bot` | Sends alerts via Telegram bot |
 
 ### Automation (Phase 12)
 | Package | Install | Why |
@@ -130,7 +129,7 @@ ALPACA_SECRET_KEY=your_alpaca_secret_here
 - **FRED API key** — free at https://fred.stlouisfed.org/docs/api/api_key.html
 - **Alpaca API key** — free paper trading account at 
 
-Discord/Telegram keys are optional — only needed if you want those alert channels.
+Discord webhook URL is optional — only needed if you want Discord alert notifications.
 
 ---
 
@@ -150,5 +149,5 @@ Install only what you need for the phase you're currently running:
 | 8 — Ranking + Dashboard | + streamlit, plotly (already listed above) |
 | 9 — Backtesting | no new packages |
 | 10 — Trading | + alpaca-trade-api |
-| 11 — Alerts & Reports | + discord-webhook, python-telegram-bot, fpdf2 |
+| 11 — Alerts & Reports | + discord-webhook, fpdf2, python-docx |
 | 12 — Automation | + apscheduler |
