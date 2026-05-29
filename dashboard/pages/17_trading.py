@@ -84,6 +84,8 @@ if acct_err:
     st.warning(f"Could not connect to Alpaca: {acct_err}")
     if not settings.alpaca.api_key:
         st.code("ALPACA_API_KEY=your_key\nALPACA_SECRET_KEY=your_secret", language="bash")
+elif account is None:
+    st.warning("Could not connect to Alpaca: get_account returned no data")
 else:
     col1, col2, col3, col4, col5 = st.columns(5)
     col1.metric("Status",          account.status.upper())

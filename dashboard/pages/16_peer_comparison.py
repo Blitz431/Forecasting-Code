@@ -15,6 +15,7 @@ from config.settings import get_settings
 from dashboard.components.charts import price_line, _empty_fig
 from dashboard.components.tables import style_ranking_table, style_generic
 from src.utils.input_sanitize import clean_ticker_list
+from dashboard.components.ticker_selector import render_ticker_sidebar
 
 st.set_page_config(page_title="Peer Comparison", page_icon="⚖️", layout="wide")
 st.title("⚖️ Peer Comparison")
@@ -45,6 +46,14 @@ SECTOR_PEERS: dict[str, list[str]] = {
 # Controls
 # ---------------------------------------------------------------------------#
 
+selected = render_ticker_sidebar()
+if not selected:
+    st.warning("No price data found. Run `python cli/scrape.py` first.")
+    st.stop()
+
+from dashboard.components.session_cache import format_freshness
+st.caption(f"📅 Peer data through: {format_freshness(settings.raw_daily_dir / f'{selected}.parquet')}")
+
 col1, col2 = st.columns([2, 2])
 
 with col1:
@@ -52,7 +61,6 @@ with col1:
     peers  = SECTOR_PEERS[sector]
 
 with col2:
-    selected = st.selectbox("Primary ticker", peers)
     custom_peers = st.text_input("Custom peer list (comma-sep)", placeholder="AAPL,MSFT,NVDA")
 
 if custom_peers.strip():

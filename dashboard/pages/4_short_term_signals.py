@@ -14,6 +14,7 @@ import streamlit as st
 from config.settings import get_settings
 from dashboard.components.charts import signal_heatmap, candlestick
 from dashboard.components.tables import style_signal_table, style_generic
+from dashboard.components.ticker_selector import render_ticker_sidebar
 
 st.set_page_config(page_title="Short-Term Signals", page_icon="📡", layout="wide")
 st.title("📡 Short-Term Technical Signals")
@@ -24,22 +25,18 @@ settings = get_settings()
 
 
 # ---------------------------------------------------------------------------#
-# Ticker selector
+# Ticker selector (global — persists across pages)
 # ---------------------------------------------------------------------------#
 
-daily_tickers = sorted([fp.stem for fp in settings.raw_daily_dir.glob("*.parquet")]) \
-    if settings.raw_daily_dir.exists() else []
-
-if not daily_tickers:
+selected = render_ticker_sidebar()
+if not selected:
     st.warning("No price data found. Run `python cli/scrape.py --backfill 2015` first.")
     st.stop()
 
-col1, col2 = st.columns([2, 1])
-with col1:
-    selected = st.selectbox("Ticker", daily_tickers,
-                             index=daily_tickers.index("AAPL") if "AAPL" in daily_tickers else 0)
-with col2:
-    lookback = st.number_input("Lookback days (chart)", min_value=30, max_value=756, value=252)
+from dashboard.components.session_cache import format_freshness
+st.caption(f"📅 Daily data through: {format_freshness(settings.raw_daily_dir / f'{selected}.parquet')}")
+
+lookback = st.number_input("Lookback days (chart)", min_value=30, max_value=756, value=252)
 
 # ---------------------------------------------------------------------------#
 # Load price data

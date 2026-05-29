@@ -167,7 +167,7 @@ class _BaseRecurrentModel(MLModel):
 
         optimizer = torch.optim.Adam(self._net.parameters(), lr=self.lr)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, patience=10, factor=0.5, verbose=False
+            optimizer, patience=10, factor=0.5
         )
         loss_fn = nn.MSELoss()
 

@@ -15,6 +15,7 @@ import streamlit as st
 from config.settings import get_settings
 from dashboard.components.charts import sentiment_timeline, _empty_fig
 from dashboard.components.tables import style_sentiment_table, style_generic
+from dashboard.components.ticker_selector import render_ticker_sidebar
 
 st.set_page_config(page_title="News & Sentiment", page_icon="📰", layout="wide")
 st.title("📰 News & Sentiment")
@@ -24,25 +25,18 @@ st.divider()
 settings = get_settings()
 
 # ---------------------------------------------------------------------------#
-# Ticker selector
+# Ticker selector (global — persists across pages)
 # ---------------------------------------------------------------------------#
 
-news_tickers = sorted([fp.stem for fp in settings.news_articles_dir.glob("*.parquet")]) \
-    if settings.news_articles_dir.exists() else []
-daily_tickers = sorted([fp.stem for fp in settings.raw_daily_dir.glob("*.parquet")]) \
-    if settings.raw_daily_dir.exists() else []
-all_tickers = list(dict.fromkeys(news_tickers + daily_tickers))
-
-if not all_tickers:
+selected = render_ticker_sidebar()
+if not selected:
     st.warning("No data found. Run `python cli/news.py --premarket` first.")
     st.stop()
 
-col1, col2 = st.columns([2, 1])
-with col1:
-    selected = st.selectbox("Ticker", all_tickers,
-                             index=all_tickers.index("AAPL") if "AAPL" in all_tickers else 0)
-with col2:
-    window_days = st.slider("Sentiment window (days)", 1, 30, value=7)
+from dashboard.components.session_cache import format_freshness
+st.caption(f"📅 News last fetched: {format_freshness(settings.news_articles_dir / f'{selected}.parquet')}")
+
+window_days = st.slider("Sentiment window (days)", 1, 30, value=7)
 
 # ---------------------------------------------------------------------------#
 # Load & display sentiment

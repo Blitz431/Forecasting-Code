@@ -10,8 +10,16 @@ ROOT_DIR = Path(__file__).parent.parent
 DATA_DIR = ROOT_DIR / "data"
 
 
+_ENV_FILE = str(Path(__file__).parent.parent / ".env")
+
+
 class AlpacaSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="ALPACA_")
+    model_config = SettingsConfigDict(
+        env_prefix="ALPACA_",
+        env_file=_ENV_FILE,
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     api_key: str = ""
     secret_key: str = ""
@@ -19,12 +27,23 @@ class AlpacaSettings(BaseSettings):
 
 
 class FredSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="FRED_")
+    model_config = SettingsConfigDict(
+        env_prefix="FRED_",
+        env_file=_ENV_FILE,
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     api_key: str = ""
 
 
 class AlertSettings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=_ENV_FILE,
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
     discord_webhook_url: str = ""
     smtp_host: str = ""
     smtp_port: int = 587

@@ -15,6 +15,7 @@ import streamlit as st
 from config.settings import get_settings
 from dashboard.components.charts import forecast_overlay, price_line
 from dashboard.components.tables import style_forecast_table, style_generic
+from dashboard.components.ticker_selector import render_ticker_sidebar
 
 st.set_page_config(page_title="Long-Term Forecast", page_icon="🔭", layout="wide")
 st.title("🔭 Long-Term Forecast")
@@ -25,19 +26,19 @@ settings = get_settings()
 
 
 # ---------------------------------------------------------------------------#
-# Ticker selector
+# Ticker selector (global — persists across pages)
 # ---------------------------------------------------------------------------#
 
-daily_tickers = sorted([fp.stem for fp in settings.raw_daily_dir.glob("*.parquet")]) \
-    if settings.raw_daily_dir.exists() else []
-
-if not daily_tickers:
+selected = render_ticker_sidebar()
+if not selected:
     st.warning("No price data found. Run `python cli/scrape.py --backfill 2015` first.")
     st.stop()
 
+from dashboard.components.session_cache import format_freshness
+st.caption(f"📅 Forecasts last saved: {format_freshness(settings.forecasts_dir / f'{selected}_forecasts.parquet')}")
+
 col_left, col_right = st.columns([2, 3])
 with col_left:
-    selected = st.selectbox("Ticker", daily_tickers, index=daily_tickers.index("AAPL") if "AAPL" in daily_tickers else 0)
     horizons = st.slider("Forecast quarters", 1, 8, value=settings.forecast_horizons)
     holdout  = st.slider("Holdout periods (evaluation)", 4, 16, value=settings.holdout_periods)
 

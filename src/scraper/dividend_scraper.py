@@ -39,7 +39,11 @@ def download_dividends(ticker: str, start: str | None = None) -> pd.DataFrame:
         # Filter by start date
         divs = divs[divs.index >= start]
 
-        df = divs.to_frame(name="Dividends")
+        # Newer yfinance returns a DataFrame directly; older versions return a Series
+        if isinstance(divs, pd.DataFrame):
+            df = divs.rename(columns={divs.columns[0]: "Dividends"})
+        else:
+            df = divs.to_frame(name="Dividends")
         df.index.name = "Date"
 
         return df

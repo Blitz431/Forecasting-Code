@@ -18,24 +18,57 @@ from src.utils.validation import validate_ohlcv
 logger = setup_logger(__name__)
 
 
+def _extract_ticker_from_multiindex(
+    data: pd.DataFrame,
+    ticker: str,
+) -> pd.DataFrame:
+    """Pull a single ticker out of a yfinance MultiIndex DataFrame.
+
+    yfinance 1.x is inconsistent about column level order:
+      - Multi-ticker download  → ['Ticker', 'Price']  e.g. ('AAPL', 'Close')
+      - Single-ticker download → ['Price', 'Ticker']  e.g. ('Close', 'AAPL')
+
+    We detect which level holds the ticker names at call time so neither
+    layout causes a KeyError.
+    """
+    level_names = data.columns.names  # e.g. ['Ticker', 'Price'] or ['Price', 'Ticker']
+
+    if level_names[0] == "Ticker":
+        ticker_level = 0
+    else:
+        ticker_level = 1
+
+    available = data.columns.get_level_values(ticker_level).unique()
+    if ticker not in available:
+        return pd.DataFrame()
+
+    df = data.xs(ticker, level=ticker_level, axis=1).dropna(how="all")
+    # Normalise column names to title-case (Open/High/Low/Close/Volume)
+    df.columns = [str(c).title() for c in df.columns]
+    return df
+
+
 def download_batch(
     tickers: list[str],
     start: str | date,
     end: str | date | None = None,
+    retries: int = 2,
 ) -> dict[str, pd.DataFrame]:
-    """Download OHLCV data for multiple tickers in one batch.
+    """Download OHLCV data for multiple tickers in one yfinance batch.
 
     Args:
         tickers: List of ticker symbols.
         start: Start date for data.
         end: End date (defaults to today).
+        retries: Number of retry attempts on failure.
 
     Returns:
         Dict mapping ticker -> DataFrame with OHLCV data.
     """
+    import time
+
     if end is None:
         end = date.today().isoformat()
-
     if isinstance(start, date):
         start = start.isoformat()
     if isinstance(end, date):
@@ -43,52 +76,50 @@ def download_batch(
 
     logger.info(f"Downloading {len(tickers)} tickers from {start} to {end}")
 
-    try:
-        data = yf.download(
-            tickers=tickers,
-            start=start,
-            end=end,
-            group_by="ticker",
-            auto_adjust=True,
-            threads=True,
-        )
-    except Exception as e:
-        logger.error(f"Batch download failed: {e}")
-        return {}
-
-    results = {}
+    data = pd.DataFrame()
+    for attempt in range(retries + 1):
+        try:
+            data = yf.download(
+                tickers=tickers,
+                start=start,
+                end=end,
+                group_by="ticker",
+                auto_adjust=True,
+                threads=True,
+                progress=False,
+            )
+            break   # success
+        except Exception as exc:
+            if attempt < retries:
+                wait = 5 * (attempt + 1)
+                logger.warning(f"Batch download attempt {attempt+1} failed: {exc}. Retrying in {wait}s …")
+                time.sleep(wait)
+            else:
+                logger.error(f"Batch download failed after {retries+1} attempts: {exc}")
+                return {}
 
     if data.empty:
-        return results
+        return {}
 
-    # yfinance always returns MultiIndex columns now.
-    # Single ticker: (Price, Ticker) — e.g., ('Close', 'AAPL')
-    # Multi ticker with group_by="ticker": (Ticker, Price) — e.g., ('AAPL', 'Close')
+    results: dict[str, pd.DataFrame] = {}
+
     if isinstance(data.columns, pd.MultiIndex):
-        level_names = data.columns.names  # ['Price', 'Ticker'] or ['Ticker', 'Price']
-
-        # Find which level contains the ticker symbols
-        if level_names[0] == "Ticker":
-            ticker_level, price_level = 0, 1
-        else:
-            ticker_level, price_level = 1, 0
-
-        available_tickers = data.columns.get_level_values(ticker_level).unique()
-
         for ticker in tickers:
-            if ticker in available_tickers:
-                try:
-                    ticker_data = data.xs(ticker, level=ticker_level, axis=1).dropna(how="all")
-                    if not ticker_data.empty:
-                        results[ticker] = ticker_data
-                except (KeyError, Exception) as e:
-                    logger.warning(f"[{ticker}] No data in batch result: {e}")
+            try:
+                df = _extract_ticker_from_multiindex(data, ticker)
+                if not df.empty:
+                    results[ticker] = df
+            except Exception as exc:
+                logger.warning(f"[{ticker}] Could not extract from batch: {exc}")
     else:
-        # Flat columns (very old yfinance versions)
+        # Flat columns — only possible when a single ticker was passed
         if len(tickers) == 1:
-            results[tickers[0]] = data
+            df = data.copy()
+            df.columns = [str(c).title() for c in df.columns]
+            if not df.empty:
+                results[tickers[0]] = df
 
-    logger.info(f"Successfully downloaded data for {len(results)}/{len(tickers)} tickers")
+    logger.info(f"Downloaded data for {len(results)}/{len(tickers)} tickers")
     return results
 
 

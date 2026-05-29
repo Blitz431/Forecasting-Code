@@ -14,6 +14,7 @@ import streamlit as st
 from config.settings import get_settings
 from dashboard.components.charts import _empty_fig
 from dashboard.components.tables import style_congress_table, style_insider_table, style_generic
+from dashboard.components.ticker_selector import render_ticker_sidebar
 
 st.set_page_config(page_title="Political & Insider", page_icon="🏛️", layout="wide")
 st.title("🏛️ Political & Insider Trading")
@@ -26,24 +27,15 @@ settings = get_settings()
 # Ticker selector + fetch controls
 # ---------------------------------------------------------------------------#
 
-daily_tickers = sorted([fp.stem for fp in settings.raw_daily_dir.glob("*.parquet")]) \
-    if settings.raw_daily_dir.exists() else []
-congress_tickers = sorted([fp.stem for fp in settings.political_congress_dir.glob("*.parquet")]) \
-    if settings.political_congress_dir.exists() else []
-insider_tickers  = sorted([fp.stem for fp in settings.political_insider_dir.glob("*.parquet")]) \
-    if settings.political_insider_dir.exists() else []
-all_tickers = list(dict.fromkeys(congress_tickers + insider_tickers + daily_tickers))
-
-if not all_tickers:
+selected = render_ticker_sidebar()
+if not selected:
     st.warning("No data found. Run `python cli/scrape.py` first.")
     st.stop()
 
-col1, col2 = st.columns([2, 1])
-with col1:
-    selected = st.selectbox("Ticker", all_tickers,
-                             index=all_tickers.index("AAPL") if "AAPL" in all_tickers else 0)
-with col2:
-    lookback = st.number_input("Lookback days", min_value=7, max_value=365, value=90)
+from dashboard.components.session_cache import format_freshness
+st.caption(f"📅 Filings last fetched: {format_freshness(settings.political_congress_dir / f'{selected}.parquet')}")
+
+lookback = st.number_input("Lookback days", min_value=7, max_value=365, value=90)
 
 # ---------------------------------------------------------------------------#
 # Load data helpers

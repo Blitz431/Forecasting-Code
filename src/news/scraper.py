@@ -75,24 +75,51 @@ def _fetch_feed(url: str, source: str, seen_urls: set[str]) -> list[dict]:
     return articles
 
 
+def _parse_yfinance_item(item: dict) -> tuple[str, str, str, int]:
+    """Extract (headline, url, publisher, timestamp) from a yfinance news item.
+
+    Handles both the old flat format (yfinance < 0.2.50) and the new nested
+    content format (yfinance >= 0.2.50).
+    """
+    # New nested format: {"id": ..., "content": {"title": ..., "canonicalUrl": {"url": ...}, ...}}
+    content = item.get("content", {})
+    if content:
+        headline = content.get("title", "").strip()
+        url = (content.get("canonicalUrl") or {}).get("url", "").strip()
+        if not url:
+            url = (content.get("clickThroughUrl") or {}).get("url", "").strip()
+        publisher = (content.get("provider") or {}).get("displayName", "yfinance")
+        pub_date = content.get("pubDate", "")
+        try:
+            ts = int(datetime.fromisoformat(pub_date.replace("Z", "+00:00")).timestamp()) if pub_date else 0
+        except Exception:
+            ts = 0
+    else:
+        # Old flat format
+        headline = item.get("title", "").strip()
+        url = item.get("link", "").strip()
+        publisher = item.get("publisher", "yfinance")
+        ts = item.get("providerPublishTime", 0)
+
+    return headline, url, publisher, ts
+
+
 def _fetch_yfinance_news(ticker: str, seen_urls: set[str]) -> list[dict]:
     """Fallback: pull articles from yfinance Ticker.news."""
     articles: list[dict] = []
     try:
         raw = yf.Ticker(ticker).news or []
         for item in raw:
-            url = item.get("link", "").strip()
-            headline = item.get("title", "").strip()
+            headline, url, publisher, ts = _parse_yfinance_item(item)
             if not headline or not url or url in seen_urls:
                 continue
-            ts = item.get("providerPublishTime", 0)
             published = datetime.fromtimestamp(ts, tz=timezone.utc) if ts else datetime.now(tz=timezone.utc)
             articles.append({
                 "published": published,
                 "headline": headline,
                 "summary": "",
                 "url": url,
-                "source": item.get("publisher", "yfinance"),
+                "source": publisher,
             })
             seen_urls.add(url)
     except Exception as exc:
