@@ -6,11 +6,58 @@ MLResult is the single return type from every model evaluation.
 
 from __future__ import annotations
 
+import hashlib
+import hmac as _hmac
+import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
+
+
+# ---------------------------------------------------------------------------
+# Model file integrity helpers
+# ---------------------------------------------------------------------------
+
+def _model_secret() -> bytes:
+    return os.getenv("ML_MODEL_SECRET", "").encode()
+
+
+def _sig_path(path: Path) -> Path:
+    return path.with_suffix(path.suffix + ".sig")
+
+
+def _write_sig(path: Path) -> None:
+    """Write an HMAC-SHA256 signature sidecar next to a saved model file."""
+    sig = _hmac.new(_model_secret(), path.read_bytes(), hashlib.sha256).hexdigest()
+    _sig_path(path).write_text(sig)
+
+
+def _verify_sig(path: Path) -> None:
+    """Verify the HMAC-SHA256 signature before deserializing a model file.
+
+    Raises ValueError if the file has been tampered with. Logs a warning and
+    continues (does not block) when no .sig file exists yet, so existing saved
+    models keep working — re-saving them will generate a signature going forward.
+    """
+    import logging
+
+    sp = _sig_path(path)
+    if not sp.exists():
+        logging.getLogger(__name__).warning(
+            "No .sig file for %s — skipping integrity check. "
+            "Re-save the model to generate a signature.",
+            path.name,
+        )
+        return
+    expected = sp.read_text().strip()
+    actual = _hmac.new(_model_secret(), path.read_bytes(), hashlib.sha256).hexdigest()
+    if not _hmac.compare_digest(expected, actual):
+        raise ValueError(
+            f"Integrity check failed for {path.name} — "
+            "file may be corrupt or tampered. Delete it and retrain."
+        )
 
 
 @dataclass
@@ -184,11 +231,13 @@ class MLModel(ABC):
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "wb") as f:
             pickle.dump(self, f)
+        _write_sig(path)
 
     @classmethod
     def load_from_disk(cls, path: Path) -> "MLModel":
         """Load a previously saved model from disk."""
         import pickle
 
+        _verify_sig(path)
         with open(path, "rb") as f:
             return pickle.load(f)

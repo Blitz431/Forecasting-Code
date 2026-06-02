@@ -31,7 +31,7 @@ SEC EDGAR rate limit: max 10 requests/second. We default to ~6-7/sec
 from __future__ import annotations
 
 import time
-import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as ET
 from datetime import date, datetime, timedelta, timezone
 from functools import lru_cache
 from pathlib import Path

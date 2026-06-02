@@ -88,6 +88,17 @@ class OrderResult:
 
 
 @dataclass
+class OptionPositionInfo:
+    symbol: str           # OSI contract symbol
+    qty: float
+    avg_entry_price: float    # premium per share
+    current_price: float      # current premium per share
+    market_value: float
+    unrealized_pl: float
+    unrealized_plpc: float    # in percent
+
+
+@dataclass
 class OptionContractInfo:
     symbol: str          # OSI symbol e.g. AAPL260601C00305000
     underlying: str
@@ -322,7 +333,96 @@ class AlpacaClient:
         return results
 
     # ---------------------------------------------------------------------- #
-    # Options
+    # Options — orders & positions
+    # ---------------------------------------------------------------------- #
+
+    def place_option_order(
+        self,
+        symbol: str,             # OSI contract symbol e.g. "AAPL240119C00150000"
+        qty: int,
+        side: str,               # "buy" | "sell"
+        order_type: str = "limit",
+        limit_price: float | None = None,
+        time_in_force: str = "day",
+    ) -> OrderResult | None:
+        """Submit a buy or sell order on an options contract."""
+        if self._api is None:
+            logger.error("Alpaca API not initialised — cannot place option order.")
+            return None
+
+        side = side.lower()
+        if side not in ("buy", "sell"):
+            raise ValueError(f"side must be 'buy' or 'sell', got: {side!r}")
+
+        from alpaca.trading.enums import OrderSide, TimeInForce
+        from alpaca.trading.requests import MarketOrderRequest, LimitOrderRequest
+
+        sdk_side = OrderSide.BUY if side == "buy" else OrderSide.SELL
+        tif_map = {
+            "day": TimeInForce.DAY, "gtc": TimeInForce.GTC,
+            "ioc": TimeInForce.IOC, "fok": TimeInForce.FOK,
+        }
+        sdk_tif = tif_map.get(time_in_force, TimeInForce.DAY)
+
+        mode_tag = "LIVE" if self._live else "PAPER"
+        logger.info(f"[{mode_tag}] Option {side.upper()} {order_type}: {qty} x {symbol}")
+
+        try:
+            if order_type == "limit" and limit_price is not None:
+                req = LimitOrderRequest(
+                    symbol=symbol, qty=qty, side=sdk_side,
+                    time_in_force=sdk_tif, limit_price=limit_price,
+                )
+            else:
+                req = MarketOrderRequest(
+                    symbol=symbol, qty=qty, side=sdk_side, time_in_force=sdk_tif,
+                )
+            o = self._api.submit_order(req)
+            return self._order_to_result(o)
+        except Exception as exc:
+            logger.error(f"place_option_order({symbol}, {qty}, {side}): {exc}")
+            return None
+
+    def list_option_positions(self) -> list[OptionPositionInfo]:
+        """Return all open options positions (OSI symbols only)."""
+        if self._api is None:
+            return []
+        try:
+            all_positions = self._api.get_all_positions()
+            result = []
+            for p in all_positions:
+                sym = str(p.symbol)
+                # OSI symbols: 6+ chars with digits embedded after the root
+                if len(sym) <= 6 or not any(c.isdigit() for c in sym[3:]):
+                    continue
+                result.append(OptionPositionInfo(
+                    symbol=sym,
+                    qty=float(p.qty),
+                    avg_entry_price=float(p.avg_entry_price),
+                    current_price=float(p.current_price),
+                    market_value=float(p.market_value),
+                    unrealized_pl=float(p.unrealized_pl),
+                    unrealized_plpc=float(p.unrealized_plpc) * 100,
+                ))
+            return result
+        except Exception as exc:
+            logger.error(f"list_option_positions failed: {exc}")
+            return []
+
+    def close_option_position(self, symbol: str) -> OrderResult | None:
+        """Submit a market sell to close an options position by OSI symbol."""
+        if self._api is None:
+            return None
+        try:
+            o = self._api.close_position(symbol)
+            logger.info(f"Closing option position: {symbol}")
+            return self._order_to_result(o)
+        except Exception as exc:
+            logger.error(f"close_option_position({symbol}) failed: {exc}")
+            return None
+
+    # ---------------------------------------------------------------------- #
+    # Options — chain lookup
     # ---------------------------------------------------------------------- #
 
     def get_option_contracts(

@@ -83,6 +83,9 @@ class Settings(BaseSettings):
     backfill_start_year: int = 2015
     yfinance_batch_size: int = 50  # tickers per batch to avoid rate limits
 
+    # ML model integrity (HMAC-SHA256 signing of saved .pkl/.pt files)
+    ml_model_secret: str = ""  # set via ML_MODEL_SECRET in .env
+
     # ML train/test split
     ml_train_start: str = "2015-01-01"
     ml_train_end: str = "2019-12-31"
@@ -131,6 +134,16 @@ class Settings(BaseSettings):
     options_lookback_days: int = 30                  # hist vol window (trading days)
     earnings_lookback_days: int = 365 * 3            # years of beat/miss history
     earnings_upcoming_days: int = 30                 # how far ahead to flag earnings
+
+    # Automated Options Trading (Phase 12)
+    options_capital: float = 5000.0          # dedicated options budget in dollars
+    options_max_dte: int = 45                # max days to expiry at entry
+    options_min_dte: int = 30               # min days to expiry at entry
+    options_exit_dte: int = 7               # close position at this DTE
+    options_profit_target: float = 0.50     # close at 50% gain on premium paid
+    options_stop_loss: float = 0.50         # close at 50% loss on premium paid
+    options_min_flow_signal: float = 0.30   # minimum |flow_signal| to enter
+    options_min_vol_signal: float = 0.20    # minimum |vol_signal| to enter
 
     # Trading — Phase 10 data paths
     portfolio_snapshots_dir: Path = DATA_DIR / "portfolio" / "snapshots"

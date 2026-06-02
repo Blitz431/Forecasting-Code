@@ -52,6 +52,8 @@ logger = setup_logger(__name__)
 StrategyName = Literal["value", "momentum", "mean_reversion"]
 
 _STRATEGY_NAMES: list[StrategyName] = ["value", "momentum", "mean_reversion"]
+# Options uses a fixed capital pool — tracked for P&L reporting but not in weights
+_ALL_STRATEGY_NAMES = [*_STRATEGY_NAMES, "options"]
 _MIN_SHARPE_WEEKS = 4   # minimum weeks of history before using Sharpe allocation
 
 # P&L history file path (relative to data_dir)
@@ -290,12 +292,29 @@ class MultiStrategyManager:
         )
 
     def record_weekly_pnl(self, strategy: str, weekly_pnl: float) -> None:
-        """Append a weekly P&L entry used for Sharpe calculation."""
-        if strategy not in _STRATEGY_NAMES:
+        """Append a weekly P&L entry used for Sharpe calculation.
+
+        Accepts equity strategy names and "options" (fixed-capital pool).
+        Options participates in P&L reporting but its capital is not
+        included in capital_weights().
+        """
+        if strategy not in _ALL_STRATEGY_NAMES:
             return
         entry = {"date": date.today().isoformat(), "pnl": weekly_pnl}
         self._history.setdefault(strategy, []).append(entry)
         self._save_history()
+
+    def options_pnl_summary(self, weeks: int = 12) -> dict:
+        """Return rolling P&L stats for the options strategy."""
+        history = self._history.get("options", [])
+        if not history:
+            return {"total_pnl": 0.0, "weeks": 0, "sharpe": 0.0}
+        recent = [h["pnl"] for h in history[-weeks:]]
+        import numpy as np
+        arr = np.array(recent, dtype=float)
+        std = arr.std()
+        sharpe = float(arr.mean() / std * np.sqrt(52)) if std > 0 else 0.0
+        return {"total_pnl": float(arr.sum()), "weeks": len(recent), "sharpe": sharpe}
 
     def _rolling_sharpe(self, strategy: str, weeks: int = 12) -> float:
         """Annualised Sharpe over the last *weeks* weekly P&L entries."""
@@ -316,10 +335,14 @@ class MultiStrategyManager:
     def _load_history(self) -> dict[str, list[dict]]:
         if self._history_path.exists():
             try:
-                return json.loads(self._history_path.read_text())
+                data = json.loads(self._history_path.read_text())
+                # Ensure options key exists in older state files
+                for name in _ALL_STRATEGY_NAMES:
+                    data.setdefault(name, [])
+                return data
             except Exception:
                 pass
-        return {n: [] for n in _STRATEGY_NAMES}
+        return {n: [] for n in _ALL_STRATEGY_NAMES}
 
     def _save_history(self) -> None:
         try:

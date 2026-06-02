@@ -354,6 +354,95 @@ if st.button("▶ Run Signal Preview (dry-run)"):
 st.divider()
 
 # ---------------------------------------------------------------------------#
+# Options Positions
+# ---------------------------------------------------------------------------#
+
+st.subheader("Options Positions")
+
+@st.cache_data(ttl=60, show_spinner="Loading options positions …")
+def _fetch_options_state():
+    try:
+        from src.trading.options_strategy import OptionsStrategy
+        from src.trading.alpaca_client import AlpacaClient
+        opt = OptionsStrategy(settings)
+        state_positions = opt.load_positions()
+        if settings.alpaca.api_key:
+            client = AlpacaClient(settings)
+            live_positions = client.list_option_positions()
+        else:
+            live_positions = []
+        return state_positions, live_positions
+    except Exception as e:
+        return [], []
+
+
+state_opts, live_opts = _fetch_options_state()
+
+# Budget utilization
+import math as _math
+open_notional = sum(p.market_value for p in live_opts) if live_opts else 0.0
+committed = sum(p.entry_premium * p.qty * 100 for p in state_opts) if state_opts else 0.0
+budget_display = open_notional if live_opts else committed
+
+opt_col1, opt_col2, opt_col3 = st.columns(3)
+opt_col1.metric("Options Budget", f"${settings.options_capital:,.0f}")
+opt_col2.metric("Open Notional", f"${budget_display:,.2f}")
+opt_col3.metric(
+    "Budget Used",
+    f"{budget_display / settings.options_capital * 100:.1f}%"
+    if settings.options_capital > 0 else "—",
+)
+st.progress(
+    min(budget_display / settings.options_capital, 1.0) if settings.options_capital > 0 else 0.0,
+    text=f"${budget_display:,.2f} / ${settings.options_capital:,.0f}",
+)
+
+if state_opts:
+    import datetime as _dt
+    live_map = {p.symbol: p for p in live_opts}
+    today_dt = _dt.date.today()
+
+    opt_rows = []
+    for s_pos in state_opts:
+        live = live_map.get(s_pos.symbol)
+        try:
+            exp_date = _dt.date.fromisoformat(s_pos.expiration)
+            dte = (exp_date - today_dt).days
+        except Exception:
+            dte = "?"
+
+        # Determine active exit triggers
+        triggers = []
+        if live:
+            if live.unrealized_plpc >= settings.options_profit_target * 100:
+                triggers.append("profit target")
+            elif live.unrealized_plpc <= -(settings.options_stop_loss * 100):
+                triggers.append("stop loss")
+        if isinstance(dte, int) and dte <= settings.options_exit_dte:
+            triggers.append(f"{dte} DTE guard")
+
+        opt_rows.append({
+            "Symbol":        s_pos.symbol,
+            "Underlying":    s_pos.underlying,
+            "Type":          s_pos.contract_type.upper(),
+            "Strike":        f"${s_pos.strike:.0f}",
+            "Expiry":        s_pos.expiration,
+            "DTE":           dte,
+            "Entry Premium": f"${s_pos.entry_premium:.2f}",
+            "Current":       f"${live.current_price:.2f}" if live else "—",
+            "Unreal. P&L":   f"${live.unrealized_pl:+,.2f}" if live else "—",
+            "Unreal. %":     f"{live.unrealized_plpc:+.1f}%" if live else "—",
+            "Exit Trigger":  ", ".join(triggers) if triggers else "—",
+        })
+
+    opt_df = pd.DataFrame(opt_rows)
+    st.dataframe(style_generic(opt_df), use_container_width=True, hide_index=True)
+else:
+    st.info("No open options positions tracked in data/options_positions.json.")
+
+st.divider()
+
+# ---------------------------------------------------------------------------#
 # Portfolio equity history
 # ---------------------------------------------------------------------------#
 

@@ -368,6 +368,14 @@ SHAP (SHapley Additive exPlanations) values are computed for each prediction. SH
 the question "which features drove this prediction and by how much?" — making the ML models
 interpretable rather than black-box.
 
+### Model File Integrity (`base.py`)
+Every trained model is saved with an HMAC-SHA256 signature sidecar file (`.sig`). When a model
+is loaded, the signature is verified before deserialization. If the file has been modified since
+it was saved — whether by a corrupted write or deliberate tampering — loading is blocked and a
+clear error is raised. The signing key is `ML_MODEL_SECRET` in `.env`. This applies to both
+pickle files (`.pkl`) used by classical models and PyTorch checkpoints (`.pt`) used by LSTM,
+GRU, and Transformer.
+
 **CLI usage:**
 ```bash
 # Train all models for a ticker
@@ -712,7 +720,7 @@ cd AutoStockAnalyzer
 
 ### Step 2 — Install dependencies
 ```bash
-pip install yfinance fredapi pyarrow pandas numpy openpyxl statsmodels scikit-learn xgboost lightgbm optuna shap ta alpaca-trade-api requests feedparser beautifulsoup4 transformers sentencepiece discord-webhook fpdf2 python-docx streamlit plotly python-dotenv pydantic-settings pydantic apscheduler
+pip install yfinance fredapi pyarrow pandas numpy openpyxl statsmodels scikit-learn xgboost lightgbm optuna shap ta alpaca-trade-api requests feedparser beautifulsoup4 transformers sentencepiece discord-webhook fpdf2 python-docx streamlit plotly python-dotenv pydantic-settings pydantic apscheduler defusedxml
 ```
 
 PyTorch (CPU, no GPU required):
@@ -721,13 +729,21 @@ pip install torch torchvision torchaudio
 ```
 
 ### Step 3 — Configure API keys
-Create a `.env` file in the project root:
+Create a `.env` file in the project root (copy `.env.example` as a starting point):
 ```
 FRED_API_KEY=your_fred_key_here
 ALPACA_API_KEY=your_alpaca_key_here
 ALPACA_SECRET_KEY=your_alpaca_secret_here
+ALPACA_BASE_URL=https://paper-api.alpaca.markets
 DISCORD_WEBHOOK_URL=your_discord_webhook_here  # optional
+
+# Generate with: python -c "import secrets; print(secrets.token_hex(32))"
+ML_MODEL_SECRET=your_generated_hex_key_here
 ```
+
+`ML_MODEL_SECRET` is used to sign saved ML model files with HMAC-SHA256. Without it, model
+integrity checking is skipped with a warning. Generate once and keep it in `.env` (which is
+gitignored and never committed).
 
 ### Step 4 — Run the initial data backfill
 This downloads 11 years of data for all S&P 500 stocks. Takes 15–20 minutes on first run.

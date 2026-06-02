@@ -201,6 +201,102 @@ def run(mode: str, dry_run: bool = False) -> None:
     orders_placed = 0
     orders_rejected = 0
 
+    # ------------------------------------------------------------------ #
+    # 8b. Automated options trading
+    # ------------------------------------------------------------------ #
+    if settings.options_capital > 0 and picks:
+        from src.trading.options_strategy import OptionsStrategy
+        from src.options.implied_vol import compute_iv_metrics
+        from src.options.options_data import compute_options_metrics
+
+        opt_strategy = OptionsStrategy(settings)
+
+        # Compute IV + options-flow metrics for top picks (limit for speed)
+        opt_tickers = [e.ticker for e in picks[:10]]
+        iv_metrics: dict = {}
+        opts_metrics: dict = {}
+        for _t in opt_tickers:
+            try:
+                iv_metrics[_t] = compute_iv_metrics(_t)
+                opts_metrics[_t] = compute_options_metrics(_t)
+            except Exception as _exc:
+                logger.debug(f"[OPTIONS] metrics failed for {_t}: {_exc}")
+
+        # --- exits first ---
+        opt_live_positions = client.list_option_positions()
+        exit_sigs = opt_strategy.check_exits(opt_live_positions, iv_metrics)
+
+        for sig in exit_sigs:
+            try:
+                cb.check_portfolio(portfolio_value)
+            except CircuitBreakerTripped as exc:
+                print(f"\n[HALT] {exc}")
+                break
+            if dry_run:
+                print(f"  [DRY-RUN] OPT-CLOSE {sig.symbol} — {sig.reason}")
+                continue
+            result = client.close_option_position(sig.symbol)
+            if result:
+                orders_placed += 1
+                opt_strategy.record_close(sig.symbol)
+                journal.log_exit(
+                    ticker=sig.symbol,
+                    price=sig.limit_price or 0.0,
+                    shares=sig.qty,
+                    entry_price=0.0,
+                    entry_date=date.today().isoformat(),
+                    signals={},
+                    strategy="options",
+                    exit_reason=sig.reason.split(":")[0],
+                )
+                print(f"  [OPT-CLOSE] {sig.symbol} — {sig.reason}")
+
+        # --- entries ---
+        entry_sigs = opt_strategy.generate_entries(picks, iv_metrics, opts_metrics, client)
+
+        for sig in entry_sigs:
+            try:
+                cb.check_portfolio(portfolio_value)
+            except CircuitBreakerTripped as exc:
+                print(f"\n[HALT] {exc}")
+                break
+            if dry_run:
+                print(
+                    f"  [DRY-RUN] OPT-BUY {sig.qty}x {sig.symbol} "
+                    f"({sig.contract_type.upper()}) @ ${sig.limit_price:.2f} — {sig.reason}"
+                )
+                continue
+            result = client.place_option_order(
+                symbol=sig.symbol,
+                qty=sig.qty,
+                side="buy",
+                order_type="limit",
+                limit_price=sig.limit_price,
+            )
+            if result:
+                orders_placed += 1
+                opt_strategy.record_fill(
+                    symbol=sig.symbol,
+                    underlying=sig.underlying,
+                    contract_type=sig.contract_type,
+                    strike=sig.strike,
+                    expiration=sig.expiration,
+                    qty=sig.qty,
+                    fill_price=sig.limit_price or 0.0,
+                    iv_spike_entry=iv_metrics.get(sig.underlying, {}).get("iv_spike", False),
+                )
+                journal.log_entry(
+                    ticker=sig.symbol,
+                    price=sig.limit_price or 0.0,
+                    shares=sig.qty,
+                    signals={},
+                    strategy="options",
+                )
+                print(
+                    f"  [OPT-BUY] {sig.qty}x {sig.symbol} "
+                    f"({sig.contract_type.upper()}) @ ${sig.limit_price:.2f} — {sig.reason}"
+                )
+
     current_pos_values: dict[str, float] = {p.ticker: p.market_value for p in positions}
     current_scores: dict[str, float]     = {e.ticker: e.composite_score for e in picks}
 

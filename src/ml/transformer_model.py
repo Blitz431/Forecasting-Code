@@ -18,7 +18,7 @@ from pathlib import Path
 
 import numpy as np
 
-from src.ml.base import MLModel
+from src.ml.base import MLModel, _write_sig, _verify_sig
 from src.utils.logging import setup_logger
 
 logger = setup_logger(__name__)
@@ -277,4 +277,5 @@ class TransformerModel(MLModel):
             },
             str(path),
         )
+        _write_sig(path)
         logger.debug(f"Transformer saved to {path}")

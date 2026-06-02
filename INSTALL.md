@@ -8,7 +8,7 @@ Run each `pip install` command in your terminal.
 ## Quick Install (all at once)
 
 ```
-pip install yfinance fredapi pyarrow pandas numpy openpyxl statsmodels scikit-learn xgboost lightgbm optuna shap ta alpaca-trade-api requests feedparser beautifulsoup4 transformers sentencepiece discord-webhook fpdf2 python-docx streamlit plotly python-dotenv pydantic-settings pydantic apscheduler
+pip install yfinance fredapi pyarrow pandas numpy openpyxl statsmodels scikit-learn xgboost lightgbm optuna shap ta alpaca-trade-api requests feedparser beautifulsoup4 transformers sentencepiece discord-webhook fpdf2 python-docx streamlit plotly python-dotenv pydantic-settings pydantic apscheduler defusedxml
 ```
 
 For PyTorch (GPU version for your NVIDIA 3060 Ti):
@@ -97,12 +97,19 @@ pip install pytest pytest-cov ruff
 | `pydantic-settings` | `pip install pydantic-settings` | Validates and manages all settings in `config/settings.py` |
 | `pydantic` | `pip install pydantic` | Data validation library used by pydantic-settings |
 
+### Security (All Phases)
+| Package | Install | Why |
+|---------|---------|-----|
+| `defusedxml` | `pip install defusedxml` | Safe XML parser used in `src/political/insider_tracker.py` to parse SEC EDGAR Form 4 XML — guards against XML bomb and related parser attacks |
+
 ### Development & Testing (Optional)
 | Package | Install | Why |
 |---------|---------|-----|
 | `pytest` | `pip install pytest` | Runs the test suite (`python -m pytest tests/`) |
 | `pytest-cov` | `pip install pytest-cov` | Test coverage reports |
 | `ruff` | `pip install ruff` | Fast Python linter to catch errors and enforce style |
+| `detect-secrets` | `pip install detect-secrets` | Pre-commit hook that blocks accidental API key commits (see `.pre-commit-config.yaml`) |
+| `pre-commit` | `pip install pre-commit` | Hook runner — after install run `pre-commit install` to activate |
 
 ---
 
@@ -114,10 +121,16 @@ Create a `.env` file in the project root with the following (fill in your actual
 FRED_API_KEY=your_fred_key_here
 ALPACA_API_KEY=your_alpaca_key_here
 ALPACA_SECRET_KEY=your_alpaca_secret_here
+ALPACA_BASE_URL=https://paper-api.alpaca.markets
+
+# ML model integrity key — generate once and keep it secret
+# Run: python -c "import secrets; print(secrets.token_hex(32))"
+ML_MODEL_SECRET=your_generated_hex_key_here
 ```
 
 - **FRED API key** — free at https://fred.stlouisfed.org/docs/api/api_key.html
-- **Alpaca API key** — free paper trading account at 
+- **Alpaca API key** — free paper trading account at https://app.alpaca.markets/
+- **ML_MODEL_SECRET** — generate locally with `python -c "import secrets; print(secrets.token_hex(32))"`. This key signs saved model files so tampered `.pkl`/`.pt` files are detected before loading.
 
 Discord webhook URL is optional — only needed if you want Discord alert notifications.
 
@@ -134,7 +147,7 @@ Install only what you need for the phase you're currently running:
 | 3 — Indicators | + ta |
 | 4 — ML Engine | + torch (GPU), xgboost, lightgbm, optuna, shap |
 | 5 — News & Sentiment | + requests, feedparser, beautifulsoup4, transformers, sentencepiece |
-| 6 — Political/Insider | no new packages |
+| 6 — Political/Insider | + defusedxml |
 | 7 — Options/Calendar | no new packages |
 | 8 — Ranking + Dashboard | + streamlit, plotly (already listed above) |
 | 9 — Backtesting | no new packages |

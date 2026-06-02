@@ -28,7 +28,7 @@ Ideas to build eventually. Not prioritized — just a running list.
 
 ## Data
 
-*(add ideas here)*
+- All tradeable iteam on the stock exchange
 
 ---
 

@@ -1,5 +1,45 @@
 # Security Audit — AutoStockAnalyzer
 
+---
+
+## May 2026 Security Pass
+
+**Date:** 2026-05-28
+**Scope:** Full codebase re-audit — `src/`, `dashboard/`, `cli/`, `config/`, root.
+
+### Findings & Fixes
+
+| Finding | Severity | Status |
+|---------|----------|--------|
+| Plaintext Alpaca + FRED API keys in `.env` exposed in session | Medium | **ACTION REQUIRED** — rotate keys in Alpaca dashboard and at fred.stlouisfed.org. New keys are gitignored; `detect-secrets` pre-commit hook added to block future accidents. |
+| `pickle.load()` in `src/ml/base.py` had no integrity check before deserializing model files | Medium | **FIXED** — HMAC-SHA256 signing added. `save()` writes a `.sig` sidecar; `load_from_disk()` verifies it before loading. Covered pickle (all classical + sklearn models) and `torch.save` (LSTM, GRU, Transformer). |
+| `xml.etree.ElementTree` used to parse untrusted SEC EDGAR XML | Low | **FIXED** — Replaced with `defusedxml.ElementTree` (drop-in, identical API). |
+| No pre-commit guard against accidental secret commits | Low | **FIXED** — Added `.pre-commit-config.yaml` with `detect-secrets` hook and `.secrets.baseline`. |
+
+### Files Changed (May 2026)
+
+- `src/ml/base.py` — added `_write_sig`, `_verify_sig`, `_model_secret` utilities; wired into `save()` and `load_from_disk()`
+- `src/ml/lstm_model.py` — `save()` now calls `_write_sig` after `torch.save()`
+- `src/ml/transformer_model.py` — same as above
+- `src/political/insider_tracker.py` — `import xml.etree.ElementTree` → `import defusedxml.ElementTree`
+- `config/settings.py` — added `ml_model_secret: str = ""` field (env var `ML_MODEL_SECRET`)
+- `pyproject.toml` — added `defusedxml>=0.7.1`
+- `.env` — added `ML_MODEL_SECRET` (generated random 64-hex key)
+- `.env.example` — added `ML_MODEL_SECRET=` placeholder with generation instructions
+- `.pre-commit-config.yaml` *(new)* — `detect-secrets` hook
+- `.secrets.baseline` *(new)* — baseline for detect-secrets
+
+### Key Action Still Required
+
+**Rotate your Alpaca API key pair and FRED API key.** These appeared in plaintext during the audit session. The Alpaca base URL is paper trading so no real money is at risk, but the keys are live credentials. Steps:
+1. Alpaca dashboard → API Keys → Revoke old pair → Generate new pair
+2. FRED: fred.stlouisfed.org/docs/api/api_key.html → Revoke → Request new key
+3. Update `.env` with the new values
+
+---
+
+## April 2026 Security Pass
+
 **Date:** 2026-04-16
 **Scope:** Full codebase — `src/`, `dashboard/`, `cli/`, `config/`, root.
 **Deployment model reviewed:** local single-user Streamlit dashboard + CLI. No HTTP endpoints, no authentication, no multi-tenant surface.
@@ -47,7 +87,7 @@ Threats that **do not apply**:
 
 | Risk | Severity | Recommendation |
 |------|----------|---------------|
-| **Pickle/joblib model loading** (`src/ml/models/*.pkl`, `*.joblib`) | Medium | `pickle.load` is code-execution if a model file is swapped by an attacker. Mitigation: models are produced locally and the directory is gitignored — acceptable for single-user, but document. Consider moving to ONNX or checksum-verifying before load for shared deployments. |
+| **Pickle/joblib model loading** (`src/ml/models/*.pkl`, `*.joblib`) | Medium → **Mitigated** | ~~`pickle.load` is code-execution if a model file is swapped.~~ **Fixed (May 2026):** HMAC-SHA256 signing added. `_write_sig()` is called on every `save()`; `_verify_sig()` runs before every load. Tampered files raise `ValueError` and are blocked from loading. |
 | **Dependency CVEs** | Medium (time-dependent) | Run `pip-audit` quarterly. Notable dep surface: torch, transformers, alpaca-trade-api. |
 | **Discord/Discord webhook URLs in `.env`** | Low | Treat as sensitive. Do not paste logs containing webhook responses publicly. |
 | **Streamlit cache poisoning on shared machines** | Low | `@st.cache_data` stores outputs under `~/.streamlit`. If multiple OS users share the same account, anything computed here is visible. Not applicable for intended single-user use. |

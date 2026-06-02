@@ -163,7 +163,7 @@ src/forecasting/runner.py
     └── src.utils.logging
 
 src/ml/base.py
-    └── (no src/ imports)
+    └── (no src/ imports — stdlib only: os, hashlib, hmac for model integrity)
 
 src/ml/feature_engineer.py
     ├── config.settings
@@ -283,6 +283,9 @@ data/
 │
 ├── processed/          ── written by: ml/runner.py
 │   └── AAPL_ml_results.parquet + trained model files (.pkl, .pt)
+│       Each saved model also gets a .sig sidecar (HMAC-SHA256 of the
+│       model file, keyed by ML_MODEL_SECRET from .env). load_from_disk()
+│       verifies the sig before deserializing — tampered files are rejected.
 │       Columns: model_name, ticker, rmse, mae, mape, train_start/end,
 │                test_start/end, feature_importance (JSON)
 │
@@ -338,6 +341,26 @@ Walk-forward mode slides a window forward in 63-day steps (≈1 quarter).
 `news/sentiment.py` imports `torch` and `transformers` inside `__init__`
 rather than at module level. This lets the whole package import even if
 PyTorch is not installed, so tests and other modules are not blocked.
+
+### 7. Model File Integrity (HMAC-SHA256)
+Every model file written by `MLModel.save()` — whether a pickle (`.pkl`) for
+classical models or a `torch.save` (`.pt`) for deep learning — gets a companion
+`.sig` sidecar file written alongside it. The sidecar contains the
+HMAC-SHA256 of the model bytes keyed by `ML_MODEL_SECRET` from `.env`.
+
+`MLModel.load_from_disk()` calls `_verify_sig()` before deserializing. If the
+sig file is missing the load proceeds with a warning (backward compatibility for
+models saved before this feature). If the sig exists but doesn't match, a
+`ValueError` is raised and deserialization is blocked.
+
+Utility functions live in `src/ml/base.py`: `_write_sig()`, `_verify_sig()`,
+`_model_secret()`, `_sig_path()`.
+
+### 8. Defusedxml for External XML
+`src/political/insider_tracker.py` parses SEC Form 4 filings (EDGAR XML).
+It uses `defusedxml.ElementTree` instead of the stdlib `xml.etree.ElementTree`
+to guard against XML bomb and related attacks on the parser itself. The API is
+identical — only the import changed.
 
 ---
 
