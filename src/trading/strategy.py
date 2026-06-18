@@ -44,6 +44,30 @@ logger = setup_logger(__name__)
 
 SELL_THRESHOLD = -0.2   # composite score below this → SELL signal
 
+_SHORT_HORIZON = {"options_flow", "iv_signal", "earnings_signal", "forecast_signal", "news_sentiment"}
+_LONG_HORIZON  = {"insider_signal", "congress_signal", "short_interest"}
+
+
+def derive_horizon_days(rank_entry) -> int:
+    """Return holding horizon in days derived from the dominant signal sources.
+
+    Inspect the top-3 signals by absolute value:
+      ≥ 2 short-horizon sources (options/IV/earnings/forecast/news) → 14 days
+      ≥ 2 long-horizon sources  (insider/congress/short interest)   → 60 days
+      otherwise                                                      → 30 days
+    """
+    signals: dict = getattr(rank_entry, "signals", {}) or {}
+    if not signals:
+        return 30
+    top3 = sorted(signals.items(), key=lambda kv: abs(kv[1]), reverse=True)[:3]
+    short_count = sum(1 for k, _ in top3 if k in _SHORT_HORIZON)
+    long_count  = sum(1 for k, _ in top3 if k in _LONG_HORIZON)
+    if short_count >= 2:
+        return 14
+    if long_count >= 2:
+        return 60
+    return 30
+
 
 # ---------------------------------------------------------------------------#
 # State per position
@@ -59,6 +83,10 @@ class PositionState:
     trailing_stop_price: float = 0.0
     profitable_days_streak: int = 0
     last_checked_date: str = ""
+    holding_horizon_days: int = 30
+    broker_trail_pct: float = 5.0   # current broker trail %; flips to tight after horizon
+    tighten_mode: str = "auto"      # "auto" | "on_date" | "manual"
+    tighten_on_date: str = ""       # ISO date (YYYY-MM-DD); used when tighten_mode == "on_date"
 
     def update_peak(self, current_price: float) -> None:
         if current_price > self.peak_price:

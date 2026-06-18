@@ -488,3 +488,102 @@ def to_dataframe(entries: list[RankEntry]) -> pd.DataFrame:
     if not entries:
         return pd.DataFrame()
     return pd.DataFrame([e.to_dict() for e in entries])
+
+
+# ---------------------------------------------------------------------------#
+# Ranking cache (parquet)
+# ---------------------------------------------------------------------------#
+
+_CACHE_FILENAME = "ranking_cache.parquet"
+
+
+def save_ranking_cache(
+    entries: list[RankEntry],
+    settings=None,
+    current_prices: dict | None = None,
+    ml_targets: dict | None = None,
+    forecast_targets: dict | None = None,
+) -> Path:
+    """Persist ranking results to data/ranking_cache.parquet.
+
+    Each row is one ticker. Columns include composite score, all individual
+    signal values, and optional price targets from the pipeline.
+
+    Returns the path the file was written to.
+    """
+    if settings is None:
+        settings = get_settings()
+
+    rows = []
+    now = pd.Timestamp.now(tz="UTC")
+    for e in entries:
+        row: dict = {
+            "ticker":            e.ticker,
+            "rank":              e.rank,
+            "composite_score":   round(e.composite_score, 6),
+            "signals_available": e.signals_available,
+            "updated_at":        now,
+        }
+        for sig in _WEIGHTS:
+            val = e.signals.get(sig)
+            row[sig] = float(val) if val is not None else float("nan")
+
+        if current_prices:
+            row["current_price"] = current_prices.get(e.ticker)
+        if ml_targets:
+            ml_p, ml_d = ml_targets.get(e.ticker, (None, None))
+            row["ml_target"]      = ml_p
+            row["ml_target_date"] = ml_d
+        if forecast_targets:
+            fc_p, fc_d = forecast_targets.get(e.ticker, (None, None))
+            row["fcst_target"] = fc_p
+            row["fcst_date"]   = fc_d
+
+        rows.append(row)
+
+    df = pd.DataFrame(rows).set_index("ticker")
+    path = settings.data_dir / _CACHE_FILENAME
+    path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_parquet(path)
+    logger.info(f"Ranking cache saved → {path} ({len(rows)} tickers)")
+    return path
+
+
+def load_ranking_cache(settings=None) -> list[RankEntry] | None:
+    """Load cached ranking results from data/ranking_cache.parquet.
+
+    Returns a list of RankEntry objects (preserving rank order), or None
+    if no cache file exists.
+    """
+    if settings is None:
+        settings = get_settings()
+
+    path = settings.data_dir / _CACHE_FILENAME
+    if not path.exists():
+        return None
+
+    try:
+        df = pd.read_parquet(path).reset_index()
+    except Exception as exc:
+        logger.warning(f"Could not read ranking cache: {exc}")
+        return None
+
+    entries: list[RankEntry] = []
+    for _, row in df.iterrows():
+        sigs = {}
+        for sig in _WEIGHTS:
+            val = row.get(sig)
+            if val is not None and not (isinstance(val, float) and pd.isna(val)):
+                sigs[sig] = float(val)
+
+        entries.append(RankEntry(
+            ticker=str(row["ticker"]),
+            composite_score=float(row["composite_score"]),
+            rank=int(row["rank"]),
+            signals=sigs,
+            signals_available=int(row.get("signals_available", len(sigs))),
+        ))
+
+    entries.sort(key=lambda e: e.rank)
+    logger.info(f"Ranking cache loaded from {path} ({len(entries)} tickers)")
+    return entries

@@ -82,12 +82,15 @@ def _get_regime_data(settings) -> dict:
 
 
 def _get_top_picks(settings) -> pd.DataFrame:
-    """Return top-N ranked picks as a DataFrame."""
+    """Return top-N ranked picks as a DataFrame (from pipeline cache)."""
     try:
-        from src.ranking.ranker import top_picks, to_dataframe
-        picks = top_picks(settings.top_n_picks, settings)
-        df = to_dataframe(picks)
-        return df
+        from src.ranking.ranker import load_ranking_cache, top_picks, to_dataframe
+        cached = load_ranking_cache(settings)
+        if cached:
+            picks = cached[:settings.top_n_picks]
+        else:
+            picks = top_picks(settings.top_n_picks, settings)
+        return to_dataframe(picks)
     except Exception as exc:
         logger.warning(f"[morning_report] top_picks: {exc}")
         return pd.DataFrame()

@@ -136,3 +136,41 @@ with tab_vol:
         with st.expander("Raw IV data"):
             st.dataframe(style_generic(iv_df.reset_index(names=["Date"])),
                          use_container_width=True)
+
+st.divider()
+with st.expander("📖 How options flow and volatility analysis works", expanded=False):
+    st.markdown("""
+### Options Flow Analysis
+
+Options flow tracks how traders are **positioning in the options market** — which can reveal
+institutional sentiment before it shows up in the stock price.
+
+| Metric | What it means |
+|---|---|
+| **Put/Call Ratio (P/C)** | Ratio of put volume to call volume. Above 1.0 = more puts being bought (bearish); below 1.0 = more calls (bullish). A ratio below 0.7 is considered strongly bullish. |
+| **Flow Signal** | Normalised directional score derived from the P/C ratio. Positive = call-heavy (bullish); negative = put-heavy (bearish). |
+| **Unusual Activity** | Options volume significantly above the average for that strike/expiry — often indicates institutional positioning ahead of a move. |
+
+### Implied Volatility (IV) Analysis
+
+Implied volatility is the market's **forecast of how much a stock will move** over a given period,
+derived from options prices. It is forward-looking — unlike historical volatility which measures
+what already happened.
+
+| Metric | What it means |
+|---|---|
+| **IV (Implied Volatility)** | Annualised expected move extracted from option prices. High IV = market expects a big move (could be up or down). |
+| **HV (Historical Volatility)** | How much the stock actually moved over the past 30 days. Used as a baseline. |
+| **IV vs HV** | When IV > HV significantly, options are expensive (IV crush risk after earnings). When IV < HV, options are cheap. |
+| **IV Spike** | A sudden jump in IV often precedes a major event (earnings, FDA decision, news). The auto options strategy uses this as an entry signal. |
+| **Vol Signal** | Normalised score: positive when IV is elevated relative to history (expected move up); negative when suppressed. |
+
+### How the auto options strategy uses these signals
+The automated options trader requires **all three** of the following to align before entering:
+1. Flow signal above threshold (bullish call flow)
+2. Vol signal above threshold (IV elevated)
+3. Composite stock ranking score above 0.5 (fundamental + technical confirmation)
+
+This triple-confirmation reduces false signals significantly.
+""")
+

@@ -209,8 +209,11 @@ def _macro_features(macro_df: pd.DataFrame, index: pd.DatetimeIndex) -> pd.DataF
     if macro_df is None or macro_df.empty:
         return pd.DataFrame(index=index)
 
-    # Reindex to daily, forward-fill gaps (macro data is sparse)
-    macro_aligned = macro_df.reindex(index, method="ffill")
+    # Forward-fill within macro_df first so quarterly/monthly series propagate
+    # across the daily-frequency rows already present in the combined index
+    # (method="ffill" on reindex only fills *new* dates, not pre-existing NaNs).
+    macro_filled = macro_df.sort_index().ffill()
+    macro_aligned = macro_filled.reindex(index, method="ffill")
 
     # Rename columns to avoid clashes
     macro_aligned.columns = [f"macro_{c}" for c in macro_aligned.columns]

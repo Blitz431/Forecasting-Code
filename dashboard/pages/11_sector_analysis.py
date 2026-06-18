@@ -26,9 +26,14 @@ settings = get_settings()
 # Load top picks ranking
 # ---------------------------------------------------------------------------#
 
-@st.cache_data(ttl=900, show_spinner="Computing rankings …")
+@st.cache_data(ttl=900, show_spinner="Loading rankings …")
 def _load_top_picks(n: int = 30):
-    from src.ranking.ranker import top_picks, to_dataframe
+    from src.ranking.ranker import load_ranking_cache, top_picks, to_dataframe
+    cached = load_ranking_cache()
+    if cached:
+        picks = cached[:n]
+        return to_dataframe(picks), picks
+    # Fallback if no cache exists
     picks = top_picks(n=n, include_ml=False, include_indicators=True)
     return to_dataframe(picks), picks
 

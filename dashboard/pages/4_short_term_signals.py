@@ -136,3 +136,43 @@ st.caption(
     "Tip: The Moving Averages indicator computes 50-day and 200-day SMA/EMA crossovers. "
     "A golden cross (50 > 200) generates a BUY signal; a death cross generates a SELL signal."
 )
+
+st.divider()
+with st.expander("📖 How the short-term signals work", expanded=False):
+    st.markdown("""
+### Short-Term Signal Engine
+
+This page aggregates **technical indicators** computed from daily price and volume data into
+a single composite score ranging from **-1 (strong sell) to +1 (strong buy)**.
+Each indicator independently generates a signal, and the results are averaged into the score
+shown at the top.
+
+| Indicator | What it measures | Signal logic |
+|---|---|---|
+| **RSI (Relative Strength Index)** | Momentum — how fast price has moved recently | RSI < 30 = oversold → BUY; RSI > 70 = overbought → SELL |
+| **MACD** | Trend momentum — difference between fast and slow exponential moving averages | MACD line crossing above signal line → BUY; below → SELL |
+| **Moving Averages (SMA/EMA)** | Price trend direction | 50-day above 200-day (golden cross) → BUY; below (death cross) → SELL |
+| **Bollinger Bands** | Volatility + price extremes | Price at lower band → BUY; upper band → SELL |
+| **Stochastic Oscillator** | Momentum relative to recent high/low range | Below 20 → BUY; above 80 → SELL |
+| **ATR (Average True Range)** | Volatility level | High ATR = high risk; used to scale position size |
+| **OBV (On-Balance Volume)** | Volume-confirms-price trend | Rising OBV with rising price → BUY confirmation |
+| **ADX** | Trend strength (not direction) | ADX > 25 = strong trend; below = choppy/ranging market |
+| **Williams %R** | Similar to Stochastic — momentum oscillator | Below -80 → BUY; above -20 → SELL |
+
+### How the composite score is calculated
+Each indicator produces a signal value of **-1, 0, or +1**. These are averaged, weighted by
+indicator reliability, and normalised to the [-1, +1] range. A score above **+0.3** is
+considered a weak buy, above **+0.6** a strong buy. Mirror thresholds apply for sells.
+
+### Long-term vs short-term — what's the difference?
+
+| | **Short-Term (this page)** | **Long-Term (Forecast page)** |
+|---|---|---|
+| **Input data** | Daily OHLCV price + volume | Quarterly earnings, revenue, fundamentals |
+| **Horizon** | Days to weeks ahead | Quarters to years ahead |
+| **Methods** | Technical indicators + momentum | Statistical time-series + ML on fundamentals |
+| **Best for** | Timing trades, entry/exit precision | Valuation, long-term target prices |
+
+Use short-term signals to decide **when** to enter or exit; use long-term forecasts to decide **whether** a stock is worth holding.
+""")
+

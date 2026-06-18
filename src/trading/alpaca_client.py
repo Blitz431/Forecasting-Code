@@ -309,6 +309,64 @@ class AlpacaClient:
             logger.error(f"cancel_all_orders failed: {exc}")
             return 0
 
+    def place_trailing_stop(
+        self,
+        ticker: str,
+        qty: float,
+        trail_percent: float,
+    ) -> OrderResult | None:
+        """Submit a GTC trailing-stop sell order tracked by Alpaca tick-by-tick."""
+        if self._api is None:
+            logger.error("Alpaca API not initialised — cannot place trailing stop.")
+            return None
+        try:
+            from alpaca.trading.requests import TrailingStopOrderRequest
+            from alpaca.trading.enums import OrderSide, TimeInForce
+            req = TrailingStopOrderRequest(
+                symbol=ticker,
+                qty=qty,
+                side=OrderSide.SELL,
+                time_in_force=TimeInForce.GTC,
+                trail_percent=trail_percent,
+            )
+            mode_tag = "LIVE" if self._live else "PAPER"
+            logger.info(
+                f"[{mode_tag}] Placing trailing stop SELL: {qty} x {ticker} "
+                f"trail={trail_percent}%"
+            )
+            o = self._api.submit_order(req)
+            return self._order_to_result(o)
+        except Exception as exc:
+            logger.error(f"place_trailing_stop({ticker}, {qty}, {trail_percent}%): {exc}")
+            return None
+
+    def list_open_orders(self, ticker: str) -> list:
+        """Return open orders for *ticker*."""
+        if self._api is None:
+            return []
+        try:
+            from alpaca.trading.requests import GetOrdersRequest
+            from alpaca.trading.enums import QueryOrderStatus
+            req = GetOrdersRequest(status=QueryOrderStatus.OPEN, symbols=[ticker])
+            orders = self._api.get_orders(req)
+            return list(orders) if orders else []
+        except Exception as exc:
+            logger.error(f"list_open_orders({ticker}) failed: {exc}")
+            return []
+
+    def cancel_order(self, order_id: str) -> bool:
+        """Cancel a single order by its UUID string."""
+        if self._api is None:
+            return False
+        try:
+            import uuid
+            self._api.cancel_order_by_id(uuid.UUID(order_id))
+            logger.info(f"Cancelled order {order_id}")
+            return True
+        except Exception as exc:
+            logger.error(f"cancel_order({order_id}) failed: {exc}")
+            return False
+
     def close_position(self, ticker: str) -> OrderResult | None:
         """Submit a market order to liquidate the full position in *ticker*."""
         if self._api is None:

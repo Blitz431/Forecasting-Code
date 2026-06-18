@@ -45,7 +45,7 @@ def _classical_models() -> list[MLModel]:
     from src.ml.random_forest import RandomForestModel
     from src.ml.xgboost_model import LightGBMModel, XGBoostModel
 
-    return [
+    models = [
         XGBoostModel(),
         LightGBMModel(),
         RandomForestModel(),
@@ -53,6 +53,14 @@ def _classical_models() -> list[MLModel]:
         LassoModel(),
         ElasticNetModel(),
     ]
+
+    try:
+        from src.ml.catboost_model import CatBoostModel
+        models.append(CatBoostModel())
+    except ImportError:
+        pass
+
+    return models
 
 
 def _deep_learning_models() -> list[MLModel]:
@@ -65,6 +73,12 @@ def _deep_learning_models() -> list[MLModel]:
         GRUModel(),
         TransformerModel(),
     ]
+
+
+def _ensemble_models() -> list[MLModel]:
+    """Instantiate ensemble models (run after base models are done)."""
+    from src.ml.ensemble_model import StackingEnsemble
+    return [StackingEnsemble()]
 
 
 # ------------------------------------------------------------------ #
@@ -214,6 +228,7 @@ def run_all_models(
     models = _classical_models()
     if deep_learning:
         models += _deep_learning_models()
+    models += _ensemble_models()
 
     # Optuna tuning for classical models (deep learning always uses defaults or own early stopping)
     if tune:

@@ -1,7 +1,8 @@
 """Central configuration for AutoStockAnalyzer."""
 
 from pathlib import Path
-from pydantic import Field
+from typing import Optional
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -46,10 +47,17 @@ class AlertSettings(BaseSettings):
 
     discord_webhook_url: str = ""
     smtp_host: str = ""
-    smtp_port: int = 587
+    smtp_port: Optional[int] = 587
     smtp_user: str = ""
     smtp_password: str = ""
     alert_email_to: str = ""
+
+    @field_validator("smtp_port", mode="before")
+    @classmethod
+    def _coerce_smtp_port(cls, v):
+        if v == "" or v is None:
+            return 587
+        return v
 
 
 class Settings(BaseSettings):
@@ -109,6 +117,9 @@ class Settings(BaseSettings):
     max_position_pct: float = 5.0  # max 5% of portfolio per stock
     circuit_breaker_daily_pct: float = 10.0  # halt if portfolio drops 10% in a day
     circuit_breaker_single_stock_pct: float = 15.0  # force-sell at 15% loss
+    high_conviction_score_threshold: float = 0.7
+    broker_trailing_stop_pct: float = 5.0           # initial broker trailing-stop trail %
+    broker_trailing_stop_tight_pct: float = 1.0     # tighter trail after horizon expires
 
     # News & Sentiment (Phase 5)
     news_articles_dir: Path = DATA_DIR / "news" / "articles"
@@ -142,7 +153,7 @@ class Settings(BaseSettings):
     options_exit_dte: int = 7               # close position at this DTE
     options_profit_target: float = 0.50     # close at 50% gain on premium paid
     options_stop_loss: float = 0.50         # close at 50% loss on premium paid
-    options_min_flow_signal: float = 0.30   # minimum |flow_signal| to enter
+    options_min_flow_signal: float = 0.15   # minimum |flow_signal| to enter
     options_min_vol_signal: float = 0.20    # minimum |vol_signal| to enter
 
     # Trading — Phase 10 data paths

@@ -56,10 +56,15 @@ def _load_backtest_equity() -> tuple[pd.Series, pd.Series]:
 def _fetch_alpaca_positions() -> tuple[object | None, list, str]:
     try:
         import alpaca_trade_api as tradeapi
+        # The legacy SDK appends its own /v2, so strip it from a user-supplied base URL
+        # to avoid hitting /v2/v2/account → 404.
+        base_url = settings.alpaca.base_url.rstrip("/")
+        if base_url.endswith("/v2"):
+            base_url = base_url[:-3]
         api = tradeapi.REST(
             settings.alpaca.api_key,
             settings.alpaca.secret_key,
-            settings.alpaca.base_url,
+            base_url,
         )
         return api.get_account(), api.list_positions(), ""
     except Exception as e:

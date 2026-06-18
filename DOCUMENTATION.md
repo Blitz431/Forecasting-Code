@@ -21,7 +21,7 @@
 11. [Options Flow & Calendar (Phase 7)](#11-options-flow--calendar-phase-7)
 12. [Stock Ranking System (Phase 8)](#12-stock-ranking-system-phase-8)
 13. [Portfolio Analytics & Backtesting (Phase 9)](#13-portfolio-analytics--backtesting-phase-9)
-14. [Trading Integration (Phase 10)](#14-trading-integration-phase-10)
+14. [Trading Integration (Phase 10 + Smart Trade Management)](#14-trading-integration-phase-10--smart-trade-management)
 15. [Alerts & Morning Report (Phase 11)](#15-alerts--morning-report-phase-11)
 16. [Automation (Phase 12)](#16-automation-phase-12)
 17. [The Dashboard — All 20 Pages](#17-the-dashboard--all-20-pages)
@@ -569,9 +569,18 @@ python cli/backtest.py --mode full-sim --train 2015-2020 --test 2020-2026
 
 ---
 
-## 14. Trading Integration (Phase 10)
+## 14. Trading Integration (Phase 10 + Smart Trade Management)
 
 **File:** `src/trading/`
+
+**Key features added in this phase:**
+- High-conviction auto-buy filter (score ≥ 0.7 bypasses regime filters)
+- Broker-side GTC trailing stops placed on Alpaca immediately after every BUY
+- Per-position holding horizons (14 / 30 / 60 days) derived from signal sources
+- Three-mode stop tightening (auto / on_date / manual) — 5% → 1% after horizon expires
+- Manual order form in the Trading dashboard page with same trailing stop support
+- Upgraded Stock Summary Quick Trade panel (buy with trail, sell with position metrics)
+- Page 20 "Auto Trades" dashboard for complete buy history and exit calendar
 
 ### Alpaca Integration (`alpaca_client.py`)
 Connects to the Alpaca brokerage API. The system defaults to **paper trading** (simulated money,
@@ -579,8 +588,107 @@ real market prices) and requires an explicit environment variable change to enab
 
 ### Strategy (`strategy.py`)
 - Entry rules based on composite ranking score exceeding a threshold
-- **5% trailing stop** — activated after 3 consecutive profitable days on a position
+- **Software trailing stop** — activated after 3 consecutive profitable days on a position;
+  checked at each 15-minute cycle as a belt-and-suspenders backup
 - Position is automatically exited if price drops 5% from its recent peak
+
+### High-Conviction Filter
+Any stock whose `composite_score >= 0.7` triggers an automatic BUY signal regardless of
+momentum-strategy regime filters. Lower-conviction entries (`score >= 0.1`) still require
+the full regime and momentum checks. The threshold is configurable via
+`high_conviction_score_threshold` in `config/settings.py`.
+
+### Broker-Side Trailing Stops (`alpaca_client.py`)
+Every BUY — whether placed by the auto loop or by a manual order through the dashboard — is
+immediately followed by a **GTC (Good-Till-Cancelled) trailing-stop sell order placed on
+Alpaca**. Alpaca tracks the stop tick-by-tick in real time, not just at each 15-minute cycle.
+
+The initial trail is **5%** (`broker_trailing_stop_pct`). After the position's holding horizon
+expires the trail automatically tightens to **1%** (`broker_trailing_stop_tight_pct`), letting
+winners keep running while ending the trade quickly on any reversal.
+
+Three helper methods were added to `AlpacaClient`:
+- `place_trailing_stop(ticker, qty, trail_percent)` — submits the GTC trailing-stop order
+- `list_open_orders(ticker)` — returns all open orders for a symbol
+- `cancel_order(order_id)` — cancels a single order by UUID (used when swapping 5% → 1%)
+
+### Per-Position Holding Horizons (`derive_horizon_days`)
+Every position gets a holding horizon derived from which signal sources drove the buy.
+The function `derive_horizon_days(rank_entry)` in `src/trading/strategy.py` inspects the
+top-3 signals by absolute value and applies this rule:
+
+| Dominant sources | Horizon |
+|---|---|
+| ≥ 2 of: `options_flow`, `iv_signal`, `earnings_signal`, `forecast_signal`, `news_sentiment` | **14 days** (short) |
+| ≥ 2 of: `insider_signal`, `congress_signal`, `short_interest` | **60 days** (long) |
+| Mixed / `indicator_score`, `ml_signal` | **30 days** (medium) |
+
+### Tighten Mode — Three Options
+Each position independently controls *when* the 5% → 1% tightening happens via `tighten_mode`
+stored in `PositionState` and persisted in `data/strategy_states.json`:
+
+| Mode | Behaviour |
+|---|---|
+| `"auto"` | Tighten after `holding_horizon_days` have elapsed (default) |
+| `"on_date"` | Tighten on a specific calendar date (`tighten_on_date` ISO string) |
+| `"manual"` | Never auto-tighten — user clicks the button in the dashboard |
+
+The tighten check runs at the start of every `cli/trade.py` cycle (Step 4b) and is idempotent:
+once `broker_trail_pct` has flipped to 1%, the check is skipped on all subsequent cycles.
+
+### PositionState fields (persisted to `data/strategy_states.json`)
+```
+ticker, entry_price, entry_date, peak_price
+trailing_stop_active, trailing_stop_price    ← software stop (backup)
+profitable_days_streak, last_checked_date
+holding_horizon_days                          ← 14 / 30 / 60
+broker_trail_pct                              ← 5.0 → 1.0 after tighten
+tighten_mode                                  ← "auto" | "on_date" | "manual"
+tighten_on_date                               ← ISO date string (on_date mode)
+```
+
+### Trade Loop — `cli/trade.py`
+
+Each 15-minute cycle executes these steps in order:
+
+| Step | What happens |
+|------|---|
+| 1 | Fetch current portfolio value and cash |
+| 2 | Load all existing Alpaca positions |
+| 3 | Check circuit breaker (portfolio or single-stock threshold) |
+| 4 | **Force-sell** any position whose software trailing stop was hit |
+| **4b** | **Tighten check** — for every held position, evaluate `tighten_mode` and flip `broker_trail_pct` from 5% → 1% on Alpaca if the condition is met |
+| 5 | Run the market-regime detector |
+| 6 | Run the composite ranker on all S&P 500 tickers |
+| **6b** | **High-conviction pass** — collect tickers with `composite_score >= 0.7`; build `hc_signals` list injected at the front of `all_signals` so they are processed first |
+| 7 | Run all signal generators (momentum, ML, news, options, insider, etc.) |
+| 8 | Merge signals; strategy manager decides BUY / SELL / HOLD per ticker |
+| 9 | Execute orders via Alpaca; for every BUY: `place_trailing_stop()` (5% GTC) + create and persist `PositionState` with horizon/trail/tighten fields |
+| 10 | Log every trade to `TradeJournal` |
+| 11 | Export `strategy_states.json` so the dashboard can read live state |
+| 12 | Sleep until next cycle |
+
+### Manual Orders (page 17 — Trading)
+
+The **📝 Place Manual Order** form in the Trading page mirrors the auto-loop buy path:
+- Places the order via `AlpacaClient.place_order()`
+- Optionally calls `place_trailing_stop()` if the "Attach trailing stop" checkbox is ticked
+- Writes a `PositionState` entry to `data/strategy_states.json` with the same tighten/horizon fields
+
+This ensures manual trades appear in the **Exit Calendar** and get the same automatic tightening
+as system-generated buys.
+
+### Quick Trade (page 2a — Stock Summary)
+
+The **🟢 BUY** panel on the Stock Summary page adds:
+- **Trailing stop checkbox** — attach a GTC trailing stop immediately after the fill
+- **Tighten mode** — choose `auto` (after N days), `on_date` (specific calendar date), or `manual`
+- **Horizon / exact date** fields that appear conditionally based on the chosen mode
+
+The **🔴 SELL** panel adds:
+- Live position metrics (avg entry, current price, unrealized P&L)
+- **Sell entire position** toggle (auto-fills quantity from Alpaca position)
+- **Cancel trailing-stop orders** checkbox (cancels any open GTC sell orders before submitting)
 
 ### Multi-Strategy (`multi_strategy.py`)
 Runs three strategies simultaneously and allocates capital based on recent performance:
@@ -684,6 +792,7 @@ Run with: `streamlit run dashboard/app.py`
 | Home | app.py | System status overview, quick top-10 ranking |
 | 1 | Data Overview | Browse available ticker data, date ranges, data quality stats |
 | 2 | Morning Report | View and generate the daily morning briefing |
+| 2a | Stock Summary | Deep-dive on any single ticker: signals, ML, options, news, and a **Quick Trade** panel to buy/sell with automatic GTC trailing stop, tighten mode, and holding horizon |
 | 3 | Long-Term Forecast | Compare all 12 forecast methods for any ticker, overlay chart |
 | 4 | Short-Term Signals | View all 9 indicators, composite signal, heatmap across tickers |
 | 5 | ML Predictions | Model results, RMSE comparison, SHAP feature importance charts |
@@ -698,10 +807,10 @@ Run with: `streamlit run dashboard/app.py`
 | 14 | Calendar | Upcoming earnings, FOMC, CPI, jobs reports |
 | 15 | Watchlist | Custom personal watchlist with multi-timeframe analysis |
 | 16 | Peer Comparison | Stock vs sector peers relative strength chart |
-| 17 | Trading | Paper/live trading controls, circuit breaker status, order log |
+| 17 | Trading | Paper/live trading controls, circuit breaker status, order log; **manual order form** with optional GTC trailing stop and tighten-mode settings |
 | 18 | Trade Journal | Full trade history, audit log, tax lot view |
 | 19 | Alerts | Configure and test notification channels |
-| 20 | Settings | All system configuration parameters |
+| 20 | Auto Trades | **Auto-Buy Log** (every automatic purchase with strategy/score/size) + **Exit Calendar** (holding horizon progress, exact exit date, days remaining, trail status, per-position tighten controls) |
 
 ---
 

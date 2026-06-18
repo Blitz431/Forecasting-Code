@@ -249,22 +249,27 @@ class OptionsStrategy:
                 continue
 
             flow = options_metrics.get(ticker, {}).get("flow_signal", 0.0)
-            vol = iv_metrics.get(ticker, {}).get("vol_signal", 0.0)
+            iv_spike = iv_metrics.get(ticker, {}).get("iv_spike", False)
             score = entry.composite_score
             spot = iv_metrics.get(ticker, {}).get("spot_price")
+
+            logger.info(
+                f"[OPTIONS] {ticker}: flow={flow:.3f} iv_spike={iv_spike} score={score:.3f} "
+                f"spot={spot} (need |flow|>{s.options_min_flow_signal} iv_spike=True |score|>0.5)"
+            )
 
             if spot is None or spot <= 0:
                 continue
 
             if (
                 flow > s.options_min_flow_signal
-                and vol > s.options_min_vol_signal
+                and iv_spike
                 and score > 0.5
             ):
                 direction = "call"
             elif (
                 flow < -s.options_min_flow_signal
-                and vol < -s.options_min_vol_signal
+                and iv_spike
                 and score < -0.5
             ):
                 direction = "put"

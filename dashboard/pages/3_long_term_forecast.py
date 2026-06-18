@@ -180,3 +180,43 @@ else:
     )
     if not df_price.empty:
         st.plotly_chart(price_line(df_price, selected), use_container_width=True)
+
+st.divider()
+with st.expander("📖 How the long-term forecasting works", expanded=False):
+    st.markdown("""
+### Long-Term Forecasting Engine
+
+This page forecasts a stock's **price quarters into the future** using 12 different statistical
+and machine-learning methods. All methods are evaluated using a holdout period (the most recent
+quarters are withheld during training so accuracy can be measured on unseen data).
+
+The **AutoBest** model is whichever method achieves the lowest RMSE on the holdout period — it's
+selected automatically and used as the primary forecast.
+
+| Method | How it works |
+|---|---|
+| **ARIMA** | Models price as a function of its own past values and past forecast errors. Good for stationary series. |
+| **SARIMA** | Extends ARIMA with seasonal terms — captures quarterly/annual cycles in earnings or revenue. |
+| **ETS (Exponential Smoothing)** | Weights recent observations more heavily than older ones. Simple but often accurate. |
+| **Holt-Winters** | ETS with explicit trend and seasonal components. Works well when seasonality is strong. |
+| **Prophet** | Facebook's forecasting library. Decomposes price into trend + seasonality + holidays. Robust to missing data. |
+| **Linear Regression** | Fits a straight trend line to historical prices and projects it forward. Best as a baseline. |
+| **Polynomial Regression** | Fits a curve instead of a line — can capture acceleration or deceleration in growth. |
+| **Random Walk** | Assumes tomorrow's price equals today's price plus random noise. The hardest baseline to beat. |
+| **XGBoost (time-series)** | Gradient-boosted trees trained on lagged price features. Captures non-linear patterns. |
+| **LightGBM (time-series)** | Same idea as XGBoost but faster. |
+| **LSTM** | Recurrent neural network that remembers past quarters. Captures long-range trends. |
+| **AutoBest** | Automatically selects whichever of the above methods had the lowest holdout RMSE. |
+
+### Long-term vs short-term — what's the difference?
+
+| | **Long-Term (this page)** | **Short-Term (Signals page)** |
+|---|---|---|
+| **Input data** | Quarterly earnings, revenue, fundamentals | Daily OHLCV price + volume |
+| **Horizon** | Quarters to years ahead | Days to weeks ahead |
+| **Methods** | Statistical time-series + ML on fundamentals | Technical indicators + ML on price |
+| **Best for** | Valuation, entry/exit windows, target prices | Timing trades, momentum, reversals |
+
+Use long-term forecasts to decide **whether** to buy a stock; use short-term signals to decide **when**.
+""")
+

@@ -144,3 +144,44 @@ col3.metric("High Short Interest", "⚠️ YES" if high else "No")
 if high:
     st.warning(f"⚠️ {selected} has high short interest ({ratio:.1f} days to cover). "
                "This may indicate bearish sentiment or potential short-squeeze risk.")
+
+st.divider()
+with st.expander("📖 How news sentiment and short interest analysis works", expanded=False):
+    st.markdown("""
+### News Sentiment Analysis
+
+News articles are scored using **FinBERT** — a version of the BERT language model fine-tuned
+specifically on financial text (earnings reports, analyst notes, news articles).
+Unlike simple keyword matching, FinBERT understands financial language in context.
+
+| Metric | What it means |
+|---|---|
+| **Sentiment Score** | Each article is scored from -1 (very negative) to +1 (very positive). |
+| **Average Score** | Rolling average across all articles in the past 7 days. Above +0.2 is positive; below -0.2 is negative. |
+| **Article Count** | More articles = more signal. A high score from 1 article is less reliable than the same score from 20. |
+| **Positive / Negative / Neutral %** | Breakdown of article sentiment by category. |
+
+### What FinBERT understands
+Unlike a simple positive/negative word counter, FinBERT handles nuance — for example:
+- "Revenue missed estimates but guidance was raised" → mixed/positive
+- "The company beat earnings but faces regulatory headwinds" → mixed/negative
+- "Stock up 5% after strong jobs data" → positive
+
+### Short Interest Analysis
+
+Short interest measures how many shares are currently being **sold short** — traders betting
+the stock will fall. High short interest can be bearish, but can also signal a **short squeeze**
+risk if the stock starts rising and shorts are forced to cover.
+
+| Metric | What it means |
+|---|---|
+| **Short Ratio (days to cover)** | How many days of average volume it would take all short sellers to buy back shares. Above 5 is considered high. |
+| **Short % of Float** | What percentage of tradeable shares are sold short. Above 10% is elevated; above 20% is very high. |
+| **Short Squeeze Risk** | When short interest is high AND the stock is rising, short sellers must buy to limit losses — which pushes the price up further, creating a cascade. |
+
+### How these feed into the composite ranking
+- News sentiment contributes a signal from -1 to +1 to the overall stock score.
+- Short interest contributes a **negative** signal when days-to-cover is high (more shorts = more bearish pressure).
+- A high short interest combined with bullish news and options flow can flag short-squeeze candidates.
+""")
+

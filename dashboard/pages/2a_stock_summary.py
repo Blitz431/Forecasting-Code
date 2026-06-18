@@ -140,6 +140,24 @@ st.divider()
 # Section 2 — Quick Trade
 # ---------------------------------------------------------------------------#
 
+import json as _json
+from datetime import date as _date, timedelta as _td
+from pathlib import Path as _Path
+
+_STATES_FILE_SS = _Path(__file__).parent.parent.parent / "data" / "strategy_states.json"
+
+def _ss_load() -> dict:
+    if _STATES_FILE_SS.exists():
+        try:
+            return _json.loads(_STATES_FILE_SS.read_text())
+        except Exception:
+            pass
+    return {}
+
+def _ss_save(d: dict) -> None:
+    _STATES_FILE_SS.parent.mkdir(parents=True, exist_ok=True)
+    _STATES_FILE_SS.write_text(_json.dumps(d, indent=2))
+
 _TRADE_KEY  = f"trade_panel_{selected}"
 _RESULT_KEY = f"trade_result_{selected}"
 
@@ -194,11 +212,12 @@ with st.container(border=True):
 
     action = st.session_state[_TRADE_KEY]
 
-    # ── Stock order form ──────────────────────────────────────────────────
-    if action in ("buy", "sell") and alpaca_ok:
+    # ── BUY form (with trailing stop + tighten controls) ──────────────────
+    if action == "buy" and alpaca_ok:
         st.divider()
         lp_default = float(price["latest"]) if price else 100.0
-        with st.form(f"stock_form_{selected}_{action}", clear_on_submit=True):
+
+        with st.form(f"stock_form_{selected}_buy", clear_on_submit=True):
             fc1, fc2, fc3 = st.columns([2, 2, 2])
             qty        = fc1.number_input("Shares", min_value=0.01, value=1.0, step=1.0, format="%.2f")
             order_type = fc2.selectbox("Order type", ["market", "limit"])
@@ -206,20 +225,167 @@ with st.container(border=True):
                 "Limit $", min_value=0.01, value=lp_default, step=0.01,
                 disabled=(order_type != "limit"),
             )
-            verb = "Buy" if action == "buy" else "Sell"
-            if st.form_submit_button(f"Confirm {verb} {qty:.2f} × {selected}", type="primary"):
-                lp = float(limit_px) if order_type == "limit" else None
-                result = alpaca.place_order(selected, qty=float(qty), side=action,
+
+            st.markdown("**Trailing stop**")
+            ts1, ts2 = st.columns(2)
+            attach_trail  = ts1.checkbox(
+                f"Attach {settings.broker_trailing_stop_pct:.0f}% trailing stop (GTC)",
+                value=True,
+                help="Broker-side trailing stop placed on Alpaca immediately after your buy — tracks price tick-by-tick.",
+            )
+            tighten_mode  = ts2.selectbox(
+                "Tighten trail to 1% when…",
+                options=["auto", "on_date", "manual"],
+                format_func=lambda x: {
+                    "auto":    "Auto — after holding horizon expires",
+                    "on_date": "On a specific date I set",
+                    "manual":  "Manual — I'll tighten it myself",
+                }[x],
+                disabled=not attach_trail,
+            )
+
+            hd1, hd2 = st.columns(2)
+            horizon_days = hd1.number_input(
+                "Holding horizon (days)",
+                min_value=1, max_value=365, value=30,
+                help="Auto mode: number of days before the trail auto-tightens from 5% → 1%.",
+                disabled=(not attach_trail or tighten_mode != "auto"),
+            )
+            tighten_date_val = hd2.date_input(
+                "Exact tighten date",
+                value=_date.today() + _td(days=30),
+                min_value=_date.today(),
+                disabled=(not attach_trail or tighten_mode != "on_date"),
+            )
+
+            if st.form_submit_button(f"Confirm Buy {qty:.2f} × {selected}", type="primary"):
+                lp     = float(limit_px) if order_type == "limit" else None
+                result = alpaca.place_order(selected, qty=float(qty), side="buy",
                                             order_type=order_type, limit_price=lp)
                 if result:
+                    msgs = [f"✅ BUY submitted — `{result.order_id[:8]}…` **{result.status.upper()}**"]
+
+                    if attach_trail:
+                        ts_r = alpaca.place_trailing_stop(
+                            selected, float(qty),
+                            trail_percent=settings.broker_trailing_stop_pct,
+                        )
+                        if ts_r:
+                            msgs.append(
+                                f"✅ {settings.broker_trailing_stop_pct:.0f}% trailing stop attached "
+                                f"(`{ts_r.order_id[:8]}…`)"
+                            )
+                        else:
+                            msgs.append("⚠️ Trailing stop could not be placed — attach it manually.")
+
+                    # Persist position state for Exit Calendar tracking
+                    td_str = tighten_date_val.isoformat() if tighten_mode == "on_date" else ""
+                    _states = _ss_load()
+                    _states[selected] = {
+                        "ticker":                selected,
+                        "entry_price":           lp_default,
+                        "entry_date":            _date.today().isoformat(),
+                        "peak_price":            lp_default,
+                        "trailing_stop_active":  False,
+                        "trailing_stop_price":   0.0,
+                        "profitable_days_streak": 0,
+                        "last_checked_date":     "",
+                        "holding_horizon_days":  int(horizon_days),
+                        "broker_trail_pct":      settings.broker_trailing_stop_pct if attach_trail else 0.0,
+                        "tighten_mode":          tighten_mode if attach_trail else "manual",
+                        "tighten_on_date":       td_str,
+                    }
+                    _ss_save(_states)
+                    msgs.append(
+                        f"📅 Exit Calendar tracking: horizon **{int(horizon_days)}d**, "
+                        f"tighten mode **{tighten_mode}**"
+                        + (f" on {td_str}" if td_str else "")
+                    )
+
+                    st.session_state[_RESULT_KEY] = {"success": True, "msg": "  \n".join(msgs)}
+                    st.session_state[_TRADE_KEY]  = None
+                    st.rerun()
+                else:
+                    st.error("❌ Order failed — check the Trading page for details.")
+
+    # ── SELL form (with position info + sell-all + trailing stop cleanup) ──
+    elif action == "sell" and alpaca_ok:
+        st.divider()
+        lp_default = float(price["latest"]) if price else 100.0
+
+        # Show current position info if held
+        _cur_pos = alpaca.get_position(selected)
+        if _cur_pos:
+            pi1, pi2, pi3, pi4 = st.columns(4)
+            pi1.metric("Held", f"{_cur_pos.qty:.4g} shares")
+            pi2.metric("Avg Entry", f"${_cur_pos.avg_entry_price:.2f}")
+            pi3.metric("Current", f"${_cur_pos.current_price:.2f}")
+            pi4.metric(
+                "Unrealized P&L",
+                f"${_cur_pos.unrealized_pl:+,.2f}",
+                delta=f"{_cur_pos.unrealized_plpc:+.2f}%",
+                delta_color="normal",
+            )
+        else:
+            st.info(f"No open position in {selected} on Alpaca.")
+
+        with st.form(f"stock_form_{selected}_sell", clear_on_submit=True):
+            sell_all = st.checkbox(
+                "Sell entire position",
+                value=(_cur_pos is not None),
+                help="Submits a market order for all shares currently held.",
+            )
+            sa1, sa2, sa3 = st.columns(3)
+            default_qty = float(_cur_pos.qty) if _cur_pos else 1.0
+            qty = sa1.number_input(
+                "Shares to sell", min_value=0.01,
+                value=default_qty, step=1.0, format="%.4g",
+                disabled=sell_all,
+            )
+            order_type = sa2.selectbox("Order type", ["market", "limit"], disabled=sell_all)
+            limit_px   = sa3.number_input(
+                "Limit $", min_value=0.01, value=lp_default, step=0.01,
+                disabled=(sell_all or order_type != "limit"),
+            )
+            cancel_trail = st.checkbox(
+                "Cancel any open trailing-stop orders for this ticker",
+                value=True,
+                help="Finds and cancels GTC trailing-stop sell orders on Alpaca before your sell goes through.",
+            )
+
+            if st.form_submit_button(f"Confirm Sell × {selected}", type="primary"):
+                sell_qty = float(_cur_pos.qty) if (sell_all and _cur_pos) else float(qty)
+
+                # Cancel trailing stops first if requested
+                if cancel_trail:
+                    for _o in alpaca.list_open_orders(selected):
+                        _ot = _o.order_type.value if hasattr(_o.order_type, "value") else str(_o.order_type)
+                        _os = _o.side.value if hasattr(_o.side, "value") else str(_o.side)
+                        if _ot == "trailing_stop" and _os == "sell":
+                            alpaca.cancel_order(str(_o.id))
+
+                if sell_all and _cur_pos:
+                    result = alpaca.close_position(selected)
+                else:
+                    lp     = float(limit_px) if order_type == "limit" else None
+                    result = alpaca.place_order(selected, qty=sell_qty, side="sell",
+                                                order_type=order_type, limit_price=lp)
+                if result:
+                    # Remove from strategy states so Exit Calendar cleans up
+                    _states = _ss_load()
+                    _states.pop(selected, None)
+                    _ss_save(_states)
                     st.session_state[_RESULT_KEY] = {
                         "success": True,
-                        "msg": f"✅ {verb} order submitted — `{result.order_id[:8]}…`  status: **{result.status.upper()}**",
+                        "msg": (
+                            f"✅ SELL submitted — `{result.order_id[:8]}…` **{result.status.upper()}**  \n"
+                            f"Exit Calendar entry for **{selected}** removed."
+                        ),
                     }
                     st.session_state[_TRADE_KEY] = None
                     st.rerun()
                 else:
-                    st.error("❌ Order failed — check the Trading page for details.")
+                    st.error("❌ Sell order failed — check the Trading page for details.")
 
     # ── Option order form ─────────────────────────────────────────────────
     elif action in ("call", "put") and alpaca_ok:

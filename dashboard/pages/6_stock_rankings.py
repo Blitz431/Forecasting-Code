@@ -59,32 +59,46 @@ def _compute_rankings(
     include_indicators: bool,
     custom: str,
 ):
-    from src.ranking.ranker import top_picks, to_dataframe
+    from src.ranking.ranker import load_ranking_cache, top_picks, to_dataframe
 
-    tickers = None
+    # Custom ticker list — always re-rank (cache won't have these)
     if custom.strip():
         tickers, rejected = clean_ticker_list(custom)
         if rejected:
             st.warning(f"Ignored {len(rejected)} invalid ticker(s): {', '.join(rejected[:10])}")
-        if not tickers:
-            tickers = None
+        tickers = tickers or None
+        picks = top_picks(
+            n=top_n, settings=None,
+            include_ml=include_ml, include_indicators=include_indicators,
+            tickers=tickers,
+        )
+        return to_dataframe(picks), picks, None
 
-    picks = top_picks(
-        n=top_n,
-        settings=None,
-        include_ml=include_ml,
-        include_indicators=include_indicators,
-        tickers=tickers,
-    )
-    return to_dataframe(picks), picks
+    # Default — load from pipeline cache
+    cached = load_ranking_cache()
+    if cached:
+        picks = cached[:top_n]
+        updated_at = None
+        try:
+            import pandas as pd
+            from config.settings import get_settings
+            s = get_settings()
+            df_raw = pd.read_parquet(s.data_dir / "ranking_cache.parquet")
+            updated_at = df_raw["updated_at"].iloc[0] if "updated_at" in df_raw.columns else None
+        except Exception:
+            pass
+        return to_dataframe(picks), picks, updated_at
+
+    # No cache — return empty to signal the UI to show an info message
+    return pd.DataFrame(), [], None
 
 
-if st.button("▶  Run Ranking", type="primary"):
+if st.button("▶  Re-run Ranking", type="primary"):
     st.cache_data.clear()   # force fresh run
 
 with st.spinner("Loading rankings …"):
     try:
-        df, picks = _compute_rankings(
+        df, picks, cache_time = _compute_rankings(
             top_n,
             include_ml,
             not no_indicators,
@@ -95,11 +109,20 @@ with st.spinner("Loading rankings …"):
         st.stop()
 
 if df.empty:
-    st.warning(
-        "Ranking returned no results. "
-        "Ensure daily price data exists (`cli/scrape.py`) and try again."
-    )
+    if not custom_tickers:
+        st.info(
+            "No ranking cache found. Run the pipeline once to generate it:\n\n"
+            "```\npython cli/pipeline.py\n```\n\n"
+            "Or enter a custom ticker list in the sidebar to rank on demand."
+        )
+    else:
+        st.warning("Ranking returned no results. Check your ticker list and try again.")
     st.stop()
+
+if cache_time is not None:
+    st.caption(f"Using cached rankings from pipeline run · last updated {cache_time}")
+else:
+    st.caption("Live ranking (no cache found — run `cli/pipeline.py` to generate cache)")
 
 # ---------------------------------------------------------------------------#
 # Summary metrics
@@ -167,3 +190,35 @@ if drill_entry:
             st.dataframe(pd.DataFrame(sig_rows), use_container_width=True, hide_index=True)
 else:
     st.info("Select a ticker above to see the signal breakdown.")
+
+st.divider()
+with st.expander("📖 How the stock ranking works", expanded=False):
+    st.markdown("""
+### Composite Ranking Engine
+
+Every stock in the universe is scored across up to **10 independent signals**, then combined
+into a single **composite score from -1 (most bearish) to +1 (most bullish)**.
+Stocks are ranked by this score — rank 1 is the highest-conviction buy candidate.
+
+| Signal | Source | What a high value means |
+|---|---|---|
+| **Forecast** | Long-term forecasting engine (12 methods) | Forecast price is significantly above current price |
+| **Indicators** | Technical indicator aggregator (RSI, MACD, BB, etc.) | Most indicators are bullish |
+| **ML** | XGBoost prediction of next-day return | Model predicts positive near-term return |
+| **News Sentiment** | FinBERT NLP on recent articles | Recent news is predominantly positive |
+| **Short Interest** | Days-to-cover ratio | Low short interest (fewer bears) |
+| **Congress** | Congressional trading disclosures | Politicians recently bought this stock |
+| **Insider** | SEC Form 4 filings | Company insiders (executives, directors) are buying |
+| **Options Flow** | Put/call ratio + unusual activity | More call buying than put buying (bullish positioning) |
+| **IV Signal** | Implied volatility vs historical vol | IV is elevated, suggesting an expected move |
+| **Earnings** | Upcoming earnings + historical surprise | Strong recent beats, earnings catalyst approaching |
+
+### How the composite score is calculated
+Each signal that is available for a stock contributes equally to the composite score
+(signals that can't be computed for a stock are skipped — only available signals count).
+The final score is a weighted average normalised to [-1, +1].
+
+A stock with fewer signals contributing isn't necessarily worse — it may just have less data
+available. The **Signals** column shows how many sources contributed.
+""")
+
