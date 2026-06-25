@@ -51,7 +51,7 @@ def _abort(msg: str) -> None:
 def _banner(mode: str, account) -> None:
     mode_str = "LIVE TRADING" if mode == "live" else "PAPER TRADING"
     print("=" * 60)
-    print(f"  AutoStockAnalyzer — {mode_str}")
+    print(f"  AutoStockAnalyzer -- {mode_str}")
     print(f"  {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC")
     if account:
         print(f"  Portfolio: ${account.portfolio_value:,.2f}  "

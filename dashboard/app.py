@@ -276,6 +276,130 @@ if run_macro:
 st.divider()
 
 # ---------------------------------------------------------------------------#
+# Analysis Pipeline (ranker + ML)
+# ---------------------------------------------------------------------------#
+
+st.subheader("Analysis Pipeline — Ranker & ML")
+st.write(
+    "**Phase 1** fast-ranks all tickers using indicators, forecasts, and sentiment. "
+    "**Phase 2** trains the full ML models on the top candidates, then re-ranks them. "
+    "Run after a scrape update to refresh the trading signals."
+)
+
+pipe_col1, pipe_col2 = st.columns(2)
+with pipe_col1:
+    pipe_pool = st.number_input(
+        "Phase-1 pool size (fed into ML training)",
+        min_value=10, max_value=503, value=100, step=10,
+        help="Top-N fast-ranked tickers that get the full ML treatment.",
+    )
+with pipe_col2:
+    pipe_top = st.number_input(
+        "Final top-N to show",
+        min_value=5, max_value=200, value=50, step=5,
+        help="How many ranked results to display and cache.",
+    )
+
+pipe_btn_col1, pipe_btn_col2 = st.columns(2)
+with pipe_btn_col1:
+    run_phase1_only = st.button(
+        "⚡ Fast Rank Only (Phase 1)",
+        help="Indicators + forecasts + sentiment — no ML training, very fast (~30s)",
+    )
+with pipe_btn_col2:
+    run_full_pipeline = st.button(
+        "🧠 Full Analysis Pipeline (Phase 1 + 2)",
+        type="primary",
+        help="Runs ML training on top candidates — takes several minutes",
+    )
+
+
+_PIPELINE_STEPS_PHASE1 = [
+    (["Fast-ranking"],                        "Phase 1: Fast-ranking all tickers with indicators..."),
+    (["[Phase 1] Done"],                      "Phase 1 complete. Collecting prices..."),
+    (["Collecting price", "Phase 1 Only]"],   "Collecting price data..."),
+    (["Ranking cache saved"],                 "Saving ranking cache..."),
+    (["AutoStockAnalyzer --"],                "Building results table..."),
+]
+
+_PIPELINE_STEPS_FULL = [
+    (["Fast-ranking"],            "Phase 1: Fast-ranking all tickers with indicators..."),
+    (["[Phase 1] Done"],          "Phase 1 complete — starting ML training..."),
+    (["Training ML models"],      "Phase 2: Training ML models on top candidates..."),
+    (["ML training done"],        "ML training done — re-ranking with ML signal..."),
+    (["Re-ranking top"],          "Phase 2: Re-ranking all candidates with ML signal..."),
+    (["Re-rank done"],            "Re-ranking done — collecting price targets..."),
+    (["Collecting price", "[Output]"], "Collecting price targets..."),
+    (["Ranking cache saved"],     "Saving ranking cache..."),
+    (["AutoStockAnalyzer --"],    "Building results table..."),
+]
+
+
+def _advance_step(line: str, steps: list, current: int) -> int:
+    for i in range(current + 1, len(steps)):
+        if any(m in line for m in steps[i][0]):
+            return i
+    return current
+
+
+def _run_pipeline(extra_args: list[str]) -> None:
+    is_phase1 = "--phase1-only" in extra_args
+    steps = _PIPELINE_STEPS_PHASE1 if is_phase1 else _PIPELINE_STEPS_FULL
+    total = len(steps)
+    current = 0
+
+    cli_path = ROOT_DIR / "cli" / "pipeline.py"
+    cmd = [sys.executable, str(cli_path)] + extra_args
+    _env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+
+    prog_bar   = st.progress(0, text=steps[0][1])
+    step_label = st.empty()
+    step_label.caption(f"Step 1 / {total} — {steps[0][1]}")
+    log_box = st.empty()
+    lines: list[str] = []
+
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=_env,
+            cwd=str(ROOT_DIR),
+        )
+        for line in proc.stdout:
+            lines.append(line.rstrip())
+            new = _advance_step(line, steps, current)
+            if new != current:
+                current = new
+                frac = current / (total - 1)
+                label = steps[current][1]
+                prog_bar.progress(frac, text=label)
+                step_label.caption(f"Step {current + 1} / {total} — {label}")
+            log_box.text_area("Output", "\n".join(lines[-100:]), height=320)
+        proc.wait()
+        if proc.returncode == 0:
+            prog_bar.progress(1.0, text="Done!")
+            step_label.caption(f"Step {total} / {total} — Complete")
+            st.success("Pipeline finished — ranking cache updated.")
+            st.cache_data.clear()
+        else:
+            st.error(f"Pipeline exited with code {proc.returncode}.")
+    except Exception as exc:
+        st.error(f"Pipeline failed to start: {exc}")
+
+
+if run_phase1_only:
+    _run_pipeline(["--pool", str(pipe_pool), "--top", str(pipe_top), "--phase1-only"])
+
+if run_full_pipeline:
+    _run_pipeline(["--pool", str(pipe_pool), "--top", str(pipe_top), "--no-deep"])
+
+st.divider()
+
+# ---------------------------------------------------------------------------#
 # Shut Down
 # ---------------------------------------------------------------------------#
 

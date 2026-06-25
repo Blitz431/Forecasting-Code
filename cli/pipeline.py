@@ -109,7 +109,7 @@ def _print_results(entries, current_prices, ml_targets, forecast_targets) -> Non
     sep = "-" * len(header)
     print()
     print("=" * len(header))
-    print("  AutoStockAnalyzer — Two-Phase Pipeline Results")
+    print("  AutoStockAnalyzer -- Two-Phase Pipeline Results")
     print(f"  Generated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}")
     print("=" * len(header))
     print(header)
@@ -156,6 +156,7 @@ def run_pipeline(
     pool: int = 150,
     top: int = 50,
     no_deep: bool = False,
+    phase1_only: bool = False,
     output: str | None = None,
 ) -> None:
     settings = get_settings()
@@ -169,7 +170,7 @@ def run_pipeline(
         if (settings.raw_daily_dir / f"{t}.parquet").exists()
     ]
 
-    print(f"\n[Phase 1] Fast-ranking {len(available)} tickers (no ML) …")
+    print(f"\n[Phase 1] Fast-ranking {len(available)} tickers (no ML) ...")
     t0 = time.time()
     phase1 = rank_tickers(
         available, settings,
@@ -177,12 +178,34 @@ def run_pipeline(
         include_indicators=True,
     )
     pool_tickers = [e.ticker for e in phase1[:pool]]
-    print(f"[Phase 1] Done in {time.time() - t0:.0f}s — pool: top {len(pool_tickers)} candidates")
+    print(f"[Phase 1] Done in {time.time() - t0:.0f}s -- pool: top {len(pool_tickers)} candidates")
+
+    if phase1_only:
+        final = phase1[:top]
+        # Still collect prices and save cache so trading loop can use it
+        print("\n[Phase 1 Only] Collecting price targets ...")
+        current_prices = {}
+        ml_targets: dict = {}
+        forecast_targets = {}
+        for e in final:
+            t = e.ticker
+            current_prices[t] = _current_price(t, settings)
+            forecast_targets[t] = _forecast_target(t, settings)
+        cache_path = save_ranking_cache(
+            phase1,
+            settings,
+            current_prices=current_prices,
+            ml_targets=ml_targets,
+            forecast_targets=forecast_targets,
+        )
+        print(f"[Cache] Ranking cache saved -> {cache_path}")
+        _print_results(final, current_prices, ml_targets, forecast_targets)
+        return
 
     # ------------------------------------------------------------------ #
     # Phase 2 — train ML on pool, then re-rank with ML signal
     # ------------------------------------------------------------------ #
-    print(f"\n[Phase 2] Training ML models on {len(pool_tickers)} candidates …")
+    print(f"\n[Phase 2] Training ML models on {len(pool_tickers)} candidates ...")
     t1 = time.time()
 
     from src.ml.runner import run_tickers as ml_run_tickers
@@ -196,7 +219,7 @@ def run_pipeline(
     )
     print(f"[Phase 2] ML training done in {time.time() - t1:.0f}s")
 
-    print(f"\n[Phase 2] Re-ranking top {len(pool_tickers)} with ML signal …")
+    print(f"\n[Phase 2] Re-ranking top {len(pool_tickers)} with ML signal ...")
     t2 = time.time()
     phase2 = rank_tickers(
         pool_tickers, settings,
@@ -230,7 +253,7 @@ def run_pipeline(
         ml_targets=ml_targets,
         forecast_targets=forecast_targets,
     )
-    print(f"[Cache] Ranking cache saved → {cache_path}")
+    print(f"[Cache] Ranking cache saved -> {cache_path}")
 
     # ------------------------------------------------------------------ #
     # Print
@@ -264,7 +287,7 @@ def run_pipeline(
         out_path = Path(output)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         pd.DataFrame(rows).to_csv(out_path, index=False)
-        print(f"Saved → {out_path}")
+        print(f"Saved -> {out_path}")
 
 
 # ---------------------------------------------------------------------------#
@@ -282,7 +305,9 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--top", type=int, default=50,
                         help="Number of final results to print (default: 50).")
     parser.add_argument("--no-deep", action="store_true",
-                        help="Skip LSTM/GRU/Transformer — faster ML training.")
+                        help="Skip LSTM/GRU/Transformer -- faster ML training.")
+    parser.add_argument("--phase1-only", action="store_true",
+                        help="Run Phase 1 fast rank only, skip ML training.")
     parser.add_argument("--output", type=str, default=None, metavar="PATH",
                         help="Optional CSV path to save results.")
     return parser.parse_args()
@@ -294,5 +319,6 @@ if __name__ == "__main__":
         pool=args.pool,
         top=args.top,
         no_deep=args.no_deep,
+        phase1_only=args.phase1_only,
         output=args.output,
     )

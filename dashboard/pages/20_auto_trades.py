@@ -8,6 +8,7 @@ Tab 2: Exit calendar — holding horizon per position, exact exit date, days rem
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from datetime import date, timedelta
 from pathlib import Path
@@ -23,9 +24,124 @@ from dashboard.components.tables import style_generic
 st.set_page_config(page_title="Auto Trades", page_icon="🤖", layout="wide")
 st.title("🤖 Auto Trades")
 st.caption(
-    "Track every automatic purchase the system made, and see when each position's "
-    "holding horizon expires together with its trailing-stop status."
+    "Run the automated trading loop, track every automatic purchase the system made, "
+    "and see when each position's holding horizon expires together with its trailing-stop status."
 )
+st.divider()
+
+# ---------------------------------------------------------------------------#
+# Run AutoTrader
+# ---------------------------------------------------------------------------#
+
+ROOT_DIR = Path(__file__).parent.parent.parent
+
+with st.container(border=True):
+    st.subheader("Run AutoTrader")
+
+    _at_col1, _at_col2, _at_col3 = st.columns(3)
+    with _at_col1:
+        _mode = st.selectbox(
+            "Trading mode",
+            ["paper", "live"],
+            index=0,
+            help="Paper uses your Alpaca paper account. Live requires ALPACA_LIVE_TRADING=true in .env.",
+        )
+    with _at_col2:
+        _dry_run = st.checkbox(
+            "Dry run (simulate only — no orders placed)",
+            value=True,
+            help="Logs what would be bought/sold without submitting any real orders.",
+        )
+    with _at_col3:
+        st.markdown("&nbsp;", unsafe_allow_html=True)
+        _run_at = st.button(
+            "▶ Run AutoTrader",
+            type="primary",
+            use_container_width=True,
+            help="Runs the full trading loop: regime check → ranker → signals → risk sizing → orders.",
+        )
+
+    if _run_at:
+        if _mode == "live" and not _dry_run:
+            import os as _os
+            if _os.getenv("ALPACA_LIVE_TRADING", "").strip().lower() != "true":
+                st.error(
+                    "Live mode requires `ALPACA_LIVE_TRADING=true` in your `.env` file. "
+                    "Set it on the Settings page, then reload before running."
+                )
+            else:
+                _confirmed = st.session_state.get("at_live_confirmed", False)
+                if not _confirmed:
+                    st.warning("You are about to place REAL orders. Click Run AutoTrader again to confirm.")
+                    st.session_state["at_live_confirmed"] = True
+                    st.stop()
+
+        st.session_state.pop("at_live_confirmed", None)
+        _cmd = [sys.executable, str(ROOT_DIR / "cli" / "trade.py"), "--mode", _mode]
+        if _dry_run:
+            _cmd.append("--dry-run")
+
+        import os as _os2
+        _env = {**_os2.environ, "PYTHONIOENCODING": "utf-8"}
+
+        _AT_STEPS = [
+            (["Paper trading mode", "LIVE TRADING MODE"],  "Connecting to Alpaca..."),
+            (["Portfolio:"],                               "Connected — checking account..."),
+            (["Circuit breaker armed"],                    "Circuit breaker armed..."),
+            (["Force-sell", "[CIRCUIT BREAKER]", "[REGIME]"],  "Checking positions + market regime..."),
+            (["[RANKING]"],                                "Loading stock rankings..."),
+            (["[HIGH-CONVICTION]", "generate_all_signals", "[OPTIONS] Metrics"], "Generating trading signals..."),
+            (["[OPTIONS]"],                                "Running options analysis..."),
+            (["[DRY-RUN]", "[BUY]", "[SELL]", "[OPT-"],   "Processing orders..."),
+            (["[DONE]"],                                   "Saving state + EOD snapshot..."),
+        ]
+        _at_total = len(_AT_STEPS)
+        _at_current = 0
+
+        _at_prog  = st.progress(0, text=_AT_STEPS[0][1])
+        _at_label = st.empty()
+        _at_label.caption(f"Step 1 / {_at_total} — {_AT_STEPS[0][1]}")
+        _log_box  = st.empty()
+        _lines: list[str] = []
+
+        def _at_advance(line: str, current: int) -> int:
+            for i in range(current + 1, _at_total):
+                if any(m in line for m in _AT_STEPS[i][0]):
+                    return i
+            return current
+
+        try:
+            _proc = subprocess.Popen(
+                _cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                env=_env,
+                cwd=str(ROOT_DIR),
+            )
+            for _line in _proc.stdout:
+                _lines.append(_line.rstrip())
+                _new = _at_advance(_line, _at_current)
+                if _new != _at_current:
+                    _at_current = _new
+                    _frac = _at_current / (_at_total - 1)
+                    _lbl = _AT_STEPS[_at_current][1]
+                    _at_prog.progress(_frac, text=_lbl)
+                    _at_label.caption(f"Step {_at_current + 1} / {_at_total} — {_lbl}")
+                _log_box.text_area("Output", "\n".join(_lines[-120:]), height=360)
+            _proc.wait()
+            if _proc.returncode == 0:
+                _at_prog.progress(1.0, text="Done!")
+                _at_label.caption(f"Step {_at_total} / {_at_total} — Complete")
+                st.success("AutoTrader run complete.")
+                st.cache_data.clear()
+            else:
+                st.error(f"AutoTrader exited with code {_proc.returncode}.")
+        except Exception as _exc:
+            st.error(f"Failed to start AutoTrader: {_exc}")
+
 st.divider()
 
 settings = get_settings()
