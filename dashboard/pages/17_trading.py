@@ -21,6 +21,10 @@ from config.settings import get_settings
 from dashboard.components.tables import style_generic
 
 st.set_page_config(page_title="Trading", page_icon="🔧", layout="wide")
+
+from dashboard.components.market_clock import render_market_clock
+render_market_clock()
+
 st.title("🔧 Trading Controls")
 st.caption("Paper and live trading via Alpaca — account status, circuit breaker, multi-strategy management.")
 st.divider()
@@ -570,17 +574,28 @@ if mo_submitted:
 
                     # Optionally attach broker trailing stop
                     if mo_attach_trail:
-                        ts = client.place_trailing_stop(
-                            mo_ticker, mo_shares,
-                            trail_percent=settings.broker_trailing_stop_pct,
-                        )
-                        if ts:
-                            st.success(
-                                f"✅ Trailing stop attached: {settings.broker_trailing_stop_pct}% GTC "
-                                f"(order ID: `{ts.order_id}`)"
+                        # Alpaca rejects the trailing-stop SELL while the BUY is still
+                        # open, so wait briefly for the fill first.
+                        if client.wait_for_fill(order.order_id, timeout=10.0):
+                            ts = client.place_trailing_stop(
+                                mo_ticker, mo_shares,
+                                trail_percent=settings.broker_trailing_stop_pct,
                             )
+                            if ts:
+                                st.success(
+                                    f"✅ Trailing stop attached: {settings.broker_trailing_stop_pct}% GTC "
+                                    f"(order ID: `{ts.order_id}`)"
+                                )
+                            else:
+                                st.warning(
+                                    "⚠️ Trailing stop could not be placed — the background "
+                                    "reconciliation sweep will retry within 5 minutes."
+                                )
                         else:
-                            st.warning("⚠️ Trailing stop could not be placed — place it manually on Alpaca.")
+                            st.info(
+                                "⏳ Buy not filled yet (queued/after-hours) — the background "
+                                "reconciliation sweep will attach the trailing stop once it fills."
+                            )
 
                     # Write position state so Exit Calendar tracks it
                     tighten_date_str = mo_tighten_date.isoformat() if mo_tighten_date else ""

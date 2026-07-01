@@ -1,9 +1,3 @@
-"""Random Forest regressor model for Phase 4 ML Engine.
-
-Uses scikit-learn's RandomForestRegressor with parallelism across all CPU cores.
-Feature importances are exposed via get_feature_importance() for SHAP compatibility.
-"""
-
 from __future__ import annotations
 
 import numpy as np
@@ -12,6 +6,18 @@ from src.ml.base import MLModel
 from src.utils.logging import setup_logger
 
 logger = setup_logger(__name__)
+
+"""
+Purpose: Random Forest regressor — scikit-learn ensemble model with multi-core parallelism for Phase 4.
+
+Connections:
+  - src/ml/base.py: subclasses MLModel, returns MLResult
+  - src/ml/runner.py: instantiated and trained via run_ticker()
+  - src/ml/feature_selection.py: feature importances used by SHAP filter
+
+In:  (X_train, y_train) numpy arrays
+Out: MLResult with predictions, RMSE/MAE/MAPE, feature_importance; .pkl saved to disk
+"""
 
 
 class RandomForestModel(MLModel):

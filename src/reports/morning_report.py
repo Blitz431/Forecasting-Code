@@ -1,25 +1,3 @@
-"""Daily morning report generator.
-
-Produces two files saved to ``data/reports/``:
-  - ``morning_YYYY-MM-DD.pdf``   (fpdf2)
-  - ``morning_YYYY-MM-DD.xlsx``  (openpyxl, one sheet per section)
-
-Report sections (in order)
---------------------------
-1. Header — date, market regime (Bull/Bear/Sideways), VIX, yield spread
-2. Top 20 ranked picks — Ticker, Score, Rank, key signals
-3. Open portfolio positions — ticker, qty, entry, current, unrealized P&L
-4. Trade journal summary — last 5 trades + win rate + total P&L
-5. Upcoming earnings in next 7 days for held tickers
-6. Active alerts from triggers.py
-
-Public API
-----------
-    report = MorningReport(settings)
-    paths  = report.generate(held_tickers=["AAPL", "MSFT"])
-    # returns {"pdf": Path, "xlsx": Path}
-"""
-
 from __future__ import annotations
 
 import io
@@ -32,6 +10,22 @@ from config.settings import get_settings
 from src.utils.logging import setup_logger
 
 logger = setup_logger(__name__)
+
+"""
+Purpose: Generate the daily morning report — PDF and XLSX covering regime, top picks, positions, trades, earnings, and alerts.
+
+Connections:
+  - src/analytics/market_regime.py: reads current regime label and VIX/yield spread
+  - src/ranking/ranker.py: reads top-20 ranked picks
+  - src/trading/portfolio.py: reads open positions and P&L
+  - src/trading/trade_journal.py: reads last 5 trades + win rate + total P&L
+  - src/calendar/earnings.py: reads upcoming earnings for held tickers
+  - src/alerts/triggers.py: reads active alerts
+  - config/settings.py: data_dir, reports path
+
+In:  held_tickers list; reads from all the above signal/state sources
+Out: data/reports/morning_{YYYY-MM-DD}.pdf and .xlsx
+"""
 
 # fpdf2's default Helvetica font uses latin-1 encoding and cannot render
 # em/en-dashes, smart quotes, or other common Unicode punctuation. Map them

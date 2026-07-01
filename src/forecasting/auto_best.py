@@ -1,23 +1,3 @@
-"""AutoBest — Method 12: Automatically select the best of Methods 1-11.
-
-Algorithm (per the design plan)
---------------------------------
-1. For each of Methods 1-11:
-   a. **Forward holdout**: fit on ``series[:-holdout]``, predict *holdout*
-      steps, compute RMSE against ``series[-holdout:]``.
-   b. **Backward holdout**: reverse the series, repeat the same procedure.
-   c. **Combined score** = average of forward and backward RMSE.
-2. Select the method with the lowest combined RMSE.
-3. Refit that method on the **full** series and return its forecasts.
-
-The backward evaluation catches methods that fit well on recent data but
-would have failed further back in history — guarding against over-fitting
-to recent trends.
-
-The final ForecastResult carries the name of the winning method plus the
-combined RMSE so callers know which method was chosen.
-"""
-
 from __future__ import annotations
 
 import warnings
@@ -44,6 +24,20 @@ from src.forecasting.regression import OLSRegression
 from src.utils.logging import setup_logger
 
 logger = setup_logger(__name__)
+
+"""
+Purpose: AutoBest (Method 12) — picks the best of Methods 1–11 via bi-directional holdout evaluation.
+
+Connections:
+  - src/forecasting/decomposition.py, exponential_smoothing.py, moving_average.py, regression.py:
+    instantiates all 11 methods as candidates
+  - src/forecasting/base.py: ForecastMethod, ForecastResult types
+  - src/forecasting/metrics.py: compute_rmse() to score each candidate
+  - src/forecasting/runner.py: instantiated and called as Method 12 in ALL_METHODS
+
+In:  quarterly price pd.Series
+Out: ForecastResult from the winning method, with the winner's name and combined RMSE
+"""
 
 
 def _candidate_methods() -> list[ForecastMethod]:

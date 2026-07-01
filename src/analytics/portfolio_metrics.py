@@ -1,22 +1,19 @@
-"""Portfolio performance metrics: Sharpe, Sortino, max drawdown, beta, CAGR.
-
-All functions accept a ``pd.Series`` of daily portfolio values (equity curve)
-and an optional benchmark series (e.g. SPY daily close prices).
-Both series must share the same DatetimeIndex.
-
-Usage
------
-    from src.analytics.portfolio_metrics import compute_metrics
-
-    metrics = compute_metrics(equity_curve, benchmark=spy_series)
-    # -> dict with keys: sharpe, sortino, max_drawdown, cagr, beta, calmar, win_rate, ...
-"""
-
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
 from dataclasses import dataclass, field
+
+"""
+Purpose: Compute portfolio performance metrics — Sharpe, Sortino, Calmar, max drawdown, beta, alpha, CAGR.
+
+Connections:
+  - src/trading/backtester.py: calls compute_metrics() on the equity curve after each backtest run
+  - src/reports/morning_report.py: uses PortfolioMetrics dataclass to populate report sections
+
+In:  equity curve pd.Series (daily portfolio values) + optional benchmark pd.Series (e.g. SPY)
+Out: PortfolioMetrics dataclass (sharpe, sortino, calmar, max_drawdown, cagr, beta, alpha, win_rate)
+"""
 
 
 TRADING_DAYS = 252

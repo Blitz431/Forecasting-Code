@@ -1,31 +1,3 @@
-"""Alert trigger checker — scans all signal sources and returns AlertEvents.
-
-Trigger conditions
-------------------
-1. New BUY signal for a top-ranked ticker
-   (composite_score in top-N from ranker, or indicator_score >= BUY threshold)
-
-2. Trailing stop hit on any open position
-   (position unrealized_plpc <= -settings.trailing_stop_pct)
-
-3. News sentiment flip: positive → negative for a held ticker
-   (compare today's sentiment vs yesterday's in data/news/articles/)
-
-4. Earnings approaching within 7 days for any held ticker
-   (uses src/calendar/earnings.py)
-
-5. Congressional trade detected for any held ticker
-   (uses src/political/congress_tracker.py, within last 7 days)
-
-6. Circuit breaker tripped
-   (reads data/circuit_breaker_state.json, checks `halted` flag)
-
-Public API
-----------
-    checker = TriggerChecker(settings)
-    events  = checker.check_all(held_tickers)   -> list[AlertEvent]
-"""
-
 from __future__ import annotations
 
 import json
@@ -40,6 +12,22 @@ from config.settings import get_settings
 from src.utils.logging import setup_logger
 
 logger = setup_logger(__name__)
+
+"""
+Purpose: Scan all signal sources for actionable events — new BUY signals, trailing stops, sentiment flips, earnings, congress trades, circuit breaker.
+
+Connections:
+  - src/ranking/ranker.py: reads composite_score to detect new top-N BUY signals
+  - src/trading/alpaca_client.py: reads position unrealized_plpc for trailing stop check
+  - src/news/aggregator.py: reads today's vs yesterday's sentiment for flip detection
+  - src/calendar/earnings.py: reads earnings_approaching flag per held ticker
+  - src/political/congress_tracker.py: scans recent congress trades for held tickers
+  - src/trading/circuit_breaker.py: reads data/circuit_breaker_state.json
+  - src/alerts/notifier.py: receives AlertEvent list and dispatches to Discord/email
+
+In:  held_tickers list; reads from all signal parquets and live Alpaca positions
+Out: list[AlertEvent] (trigger_type, title, body, level info/warning/critical, ticker)
+"""
 
 AlertLevel = Literal["info", "warning", "critical"]
 

@@ -1,26 +1,20 @@
-"""Abstract base classes and shared data structures for Phase 3 indicators.
-
-Design
-------
-All indicators follow the Strategy pattern:
-  - Implement the ``Indicator`` ABC
-  - ``compute(df) -> IndicatorResult``
-  - Return a typed ``Signal`` enum value plus raw values and human-readable text
-
-Signal scale
-------------
-  STRONG_BUY  (+2)  High-conviction bullish signal
-  BUY         (+1)  Moderate bullish signal
-  NEUTRAL      (0)  No clear directional bias
-  SELL        (-1)  Moderate bearish signal
-  STRONG_SELL (-2)  High-conviction bearish signal
-"""
-
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import IntEnum
+
+"""
+Purpose: Abstract base classes and data structures for all 9 technical indicators (Signal enum, IndicatorResult, Indicator ABC).
+
+Connections:
+  - src/indicators/rsi.py, macd.py, moving_averages.py, bollinger.py, stochastic.py,
+    volume.py, momentum.py, fundamentals.py, correlation.py: all subclass Indicator
+  - src/indicators/signal_aggregator.py: consumes IndicatorResult list to build composite score
+
+In:  daily OHLCV pd.DataFrame
+Out: IndicatorResult dataclass (signal: Signal enum -2..+2, value, details, interpretation)
+"""
 
 
 class Signal(IntEnum):

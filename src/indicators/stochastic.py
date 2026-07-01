@@ -1,18 +1,3 @@
-"""Stochastic Oscillator indicator (14, 3).
-
-Thresholds from settings:
-  stochastic_overbought = 80  → SELL / STRONG_SELL
-  stochastic_oversold   = 20  → BUY  / STRONG_BUY
-
-Signal logic
-------------
-%K < oversold AND %K crosses above %D  → STRONG_BUY  (confirmation)
-%K < oversold                           → BUY
-oversold ≤ %K ≤ overbought             → NEUTRAL
-%K > overbought                         → SELL
-%K > overbought AND %K crosses below %D → STRONG_SELL (confirmation)
-"""
-
 from __future__ import annotations
 
 import pandas as pd
@@ -20,6 +5,19 @@ import pandas as pd
 from config.settings import get_settings
 from src.indicators._calc import stochastic as _stoch
 from src.indicators.base import Indicator, IndicatorResult, Signal
+
+"""
+Purpose: Stochastic Oscillator indicator (14, 3) — overbought/oversold with %K/%D cross confirmation.
+
+Connections:
+  - src/indicators/_calc.py: stochastic() math function
+  - src/indicators/base.py: Indicator ABC, IndicatorResult, Signal types
+  - config/settings.py: stochastic_overbought (80), stochastic_oversold (20) thresholds
+  - src/indicators/signal_aggregator.py: called with weight 1.0
+
+In:  daily OHLCV pd.DataFrame (needs High/Low/Close, min ~20 rows)
+Out: IndicatorResult with Signal enum and %K/%D values
+"""
 
 
 class StochasticIndicator(Indicator):

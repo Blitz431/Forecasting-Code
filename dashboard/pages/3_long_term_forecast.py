@@ -18,6 +18,10 @@ from dashboard.components.tables import style_forecast_table, style_generic
 from dashboard.components.ticker_selector import render_ticker_sidebar
 
 st.set_page_config(page_title="Long-Term Forecast", page_icon="🔭", layout="wide")
+
+from dashboard.components.market_clock import render_market_clock
+render_market_clock()
+
 st.title("🔭 Long-Term Forecast")
 st.caption("All 12 forecast methods per ticker — seasonal decomposition, smoothing, OLS, and AutoBest.")
 st.divider()

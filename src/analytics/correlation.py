@@ -1,14 +1,3 @@
-"""Holding correlation matrix and diversification analysis.
-
-Usage
------
-    from src.analytics.correlation import CorrelationAnalyzer
-
-    analyzer = CorrelationAnalyzer(settings)
-    corr_df = analyzer.compute(["AAPL", "MSFT", "JPM"], lookback_days=63)
-    pairs   = analyzer.highly_correlated(corr_df, threshold=0.8)
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -16,6 +5,18 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+"""
+Purpose: Rolling correlation matrix across held tickers — identifies over-correlated positions for diversification.
+
+Connections:
+  - config/settings.py: raw_daily_dir for loading price data
+  - src/trading/risk.py: reads highly correlated pairs to adjust position sizing
+  - dashboard: called to show correlation heatmap panels
+
+In:  list of ticker symbols + lookback_days; reads data/raw/daily/{ticker}.parquet
+Out: correlation pd.DataFrame; highly_correlated() returns list[CorrelatedPair] above threshold
+"""
 
 
 @dataclass

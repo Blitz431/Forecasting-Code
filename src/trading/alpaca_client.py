@@ -1,20 +1,3 @@
-"""Alpaca broker wrapper — paper mode by default.
-
-Paper trading is the default unless the environment variable
-``ALPACA_LIVE_TRADING=true`` is explicitly set in ``.env``.
-
-Public API
-----------
-    from src.trading.alpaca_client import AlpacaClient
-
-    client = AlpacaClient(settings)
-    account   = client.get_account()
-    positions = client.list_positions()
-    order     = client.place_order("AAPL", qty=1, side="buy", order_type="market")
-    client.cancel_all_orders()
-    client.close_position("AAPL")
-"""
-
 from __future__ import annotations
 
 import os
@@ -24,6 +7,19 @@ from typing import Any
 from src.utils.logging import setup_logger
 
 logger = setup_logger(__name__)
+
+"""
+Purpose: Alpaca broker wrapper — paper trading by default; live only when ALPACA_LIVE_TRADING=true in .env.
+
+Connections:
+  - src/trading/portfolio.py: calls list_positions() and get_account()
+  - src/trading/circuit_breaker.py: calls cancel_all_orders() and close_position() when breaker fires
+  - config/settings.py: AlpacaSettings (api_key, secret_key, base_url)
+  - cli/trade.py: instantiates AlpacaClient and calls place_order() for live/paper execution
+
+In:  trade parameters (ticker, qty, side, order_type)
+Out: AccountInfo, PositionInfo, OrderResult dataclasses; positions/orders submitted to Alpaca API
+"""
 
 # ---------------------------------------------------------------------------#
 # Live trading guard
@@ -295,6 +291,38 @@ class AlpacaClient:
         except Exception as exc:
             logger.error(f"place_order({ticker}, {qty}, {side}): {exc}")
             return None
+
+    def wait_for_fill(self, order_id: str, timeout: float = 10.0, poll_interval: float = 1.0) -> bool:
+        """Poll *order_id* until it's filled or *timeout* seconds elapse.
+
+        Returns True once filled, False if it's cancelled/rejected/expired or the
+        timeout is reached (e.g. a market order placed outside trading hours, which
+        queues for the next session instead of filling immediately).
+        """
+        if self._api is None:
+            return False
+        import time
+        import uuid
+        from alpaca.trading.enums import OrderStatus
+
+        deadline = time.monotonic() + timeout
+        oid = uuid.UUID(order_id)
+        while True:
+            try:
+                o = self._api.get_order_by_id(oid)
+                status_val = o.status.value if hasattr(o.status, "value") else str(o.status)
+            except Exception as exc:
+                logger.error(f"wait_for_fill({order_id}) failed: {exc}")
+                return False
+            if status_val == OrderStatus.FILLED.value:
+                return True
+            if status_val in (
+                OrderStatus.CANCELED.value, OrderStatus.REJECTED.value, OrderStatus.EXPIRED.value,
+            ):
+                return False
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(poll_interval)
 
     def cancel_all_orders(self) -> int:
         """Cancel all open orders. Returns count cancelled."""

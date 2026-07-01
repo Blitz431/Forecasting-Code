@@ -1,21 +1,3 @@
-"""Per-stock P&L attribution.
-
-Given a set of positions (entry price, current/exit price, shares held),
-compute how much each position contributed to total portfolio P&L.
-
-Usage
------
-    from src.analytics.attribution import compute_attribution, AttributionEntry
-
-    positions = {
-        "AAPL": {"shares": 10, "entry_price": 150.0, "current_price": 180.0},
-        "JPM":  {"shares": 5,  "entry_price": 140.0, "current_price": 130.0},
-    }
-    results = compute_attribution(positions, portfolio_value=30000.0)
-    for r in results:
-        print(r.ticker, r.pnl, r.contribution_pct)
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -23,6 +5,17 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+"""
+Purpose: Per-stock P&L attribution — how much each position contributed to total portfolio return.
+
+Connections:
+  - src/trading/portfolio.py: passes open position data for attribution calculation
+  - src/reports/morning_report.py: uses AttributionEntry results in report sections
+
+In:  dict of {ticker: {shares, entry_price, current_price}} + total portfolio_value
+Out: list[AttributionEntry] (ticker, pnl, return_pct, contribution_pct, weight)
+"""
 
 
 @dataclass

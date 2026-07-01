@@ -1,13 +1,19 @@
-"""Forecast accuracy metrics: RMSE, MAE, MAPE.
-
-Used by every ForecastMethod via the shared evaluate() call, and also by
-AutoBest to compare methods during the bi-directional holdout evaluation.
-"""
-
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+
+"""
+Purpose: Forecast accuracy metric functions — RMSE, MAE, MAPE, holdout summary.
+
+Connections:
+  - src/forecasting/base.py: ForecastMethod.evaluate() calls compute_rmse/mae/mape
+  - src/forecasting/auto_best.py: compute_rmse() used to score all 11 candidate methods
+  - src/forecasting/runner.py: metrics_summary() builds the comparison table
+
+In:  numpy arrays of actual and predicted values
+Out: float metric scores; metrics_summary() returns a pd.DataFrame sorted by RMSE
+"""
 
 
 def compute_rmse(actual: np.ndarray, predicted: np.ndarray) -> float:

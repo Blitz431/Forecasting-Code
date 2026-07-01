@@ -1,23 +1,3 @@
-"""CLI entry point: rank stocks and print top-N composite picks.
-
-Usage
------
-    # Fast ranking (indicators + all stored signals, no ML retraining)
-    python cli/rank.py --top 20
-
-    # Include ML predictions (slow: retrains XGBoost for each ticker)
-    python cli/rank.py --top 20 --ml
-
-    # Rank a custom list of tickers
-    python cli/rank.py --tickers AAPL,MSFT,NVDA,TSLA --top 10
-
-    # Skip indicator pipeline (fastest — only stored parquet signals)
-    python cli/rank.py --top 20 --no-indicators
-
-    # Save results to CSV
-    python cli/rank.py --top 20 --output data/rankings/today.csv
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -26,6 +6,18 @@ from pathlib import Path
 
 # Ensure project root is on PYTHONPATH when run directly
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+"""
+Purpose: Synthesis CLI — aggregate all signal parquets into a composite score and print the top-N ranked picks.
+
+Connections:
+  - src/ranking/ranker.py: top_picks(), rank_tickers(), to_dataframe()
+  - src/utils/tickers.py: get_tickers() for default S&P 500 list
+  - config/settings.py: data_dir, top_n_picks
+
+In:  all signal parquets in data/ (indicators, forecasts, ML, news, political, options)
+Out: ranked table printed to stdout; optional CSV to --output path
+"""
 
 
 def parse_args() -> argparse.Namespace:

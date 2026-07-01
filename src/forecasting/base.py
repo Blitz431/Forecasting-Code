@@ -1,15 +1,22 @@
-"""Abstract base classes and data structures for the forecasting engine.
-
-All 12 forecast methods implement ForecastMethod so the runner can treat
-them uniformly. ForecastResult is the single return type from every method.
-"""
-
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 
 import pandas as pd
+
+"""
+Purpose: Abstract base classes and shared data structures for all 12 forecasting methods.
+
+Connections:
+  - src/forecasting/decomposition.py, exponential_smoothing.py, moving_average.py, regression.py, auto_best.py:
+    all subclass ForecastMethod and return ForecastResult
+  - src/forecasting/runner.py: calls method.evaluate() on each registered method
+  - src/forecasting/metrics.py: called from ForecastMethod.evaluate() to compute RMSE/MAE/MAPE
+
+In:  quarterly price pd.Series (DatetimeIndex, no NaNs)
+Out: ForecastResult dataclass (forecasts, fitted_values, rmse, mae, mape, error)
+"""
 
 
 @dataclass

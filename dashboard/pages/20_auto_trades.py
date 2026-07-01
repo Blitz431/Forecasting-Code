@@ -22,6 +22,10 @@ from config.settings import get_settings
 from dashboard.components.tables import style_generic
 
 st.set_page_config(page_title="Auto Trades", page_icon="🤖", layout="wide")
+
+from dashboard.components.market_clock import render_market_clock
+render_market_clock()
+
 st.title("🤖 Auto Trades")
 st.caption(
     "Run the automated trading loop, track every automatic purchase the system made, "

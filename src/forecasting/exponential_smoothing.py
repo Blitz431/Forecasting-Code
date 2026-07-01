@@ -1,18 +1,3 @@
-"""Exponential smoothing forecast methods (Methods 8-10).
-
-Methods
--------
-8. Simple Exponential Smoothing (SES) — level only, no trend or season.
-   Optimal alpha found by statsmodels MLE. Flat forecast.
-9. Holt's Linear Trend (double exponential smoothing) — level + trend.
-   Optimal alpha and beta. Linearly trending forecast.
-10. Holt-Winters Triple Exponential Smoothing — level + trend + seasonality.
-    Optimal alpha, beta, gamma. Uses additive seasonality (period=4).
-    Falls back to multiplicative if additive fails.
-
-All three delegate to ``statsmodels.tsa.holtwinters``.
-"""
-
 from __future__ import annotations
 
 import warnings
@@ -21,6 +6,17 @@ import numpy as np
 import pandas as pd
 
 from src.forecasting.base import ForecastMethod
+
+"""
+Purpose: Exponential smoothing forecast methods 8–10 (SES, Holt Linear Trend, Holt-Winters).
+
+Connections:
+  - src/forecasting/base.py: subclasses ForecastMethod, returns ForecastResult
+  - src/forecasting/runner.py: instantiated and called via ALL_METHODS list
+
+In:  quarterly price pd.Series
+Out: ForecastResult with forward forecasts and holdout error metrics
+"""
 
 _SEASONAL_PERIOD = 4
 

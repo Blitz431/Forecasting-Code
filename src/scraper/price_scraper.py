@@ -1,9 +1,3 @@
-"""Stock price data scraper using yfinance.
-
-Supports both batch backfill (from 2015) and incremental daily updates.
-Uses batched yf.download() for efficiency.
-"""
-
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -16,6 +10,19 @@ from src.utils.logging import setup_logger
 from src.utils.validation import validate_ohlcv
 
 logger = setup_logger(__name__)
+
+"""
+Purpose: Download and store daily OHLCV prices from yfinance — supports incremental updates and full backfill.
+
+Connections:
+  - src/scraper/storage.py: upsert_dataframe(), get_latest_date(), get_ticker_filepath()
+  - src/utils/validation.py: validate_ohlcv() after each batch download
+  - config/settings.py: batch size, backfill start year, directory paths
+  - cli/scrape.py: calls scrape_prices() and aggregate_to_quarterly()
+
+In:  list of ticker symbols; optional data_dir and backfill flag
+Out: data/raw/daily/{ticker}.parquet (daily OHLCV), data/raw/quarterly/{ticker}.parquet (resampled quarterly)
+"""
 
 
 def _extract_ticker_from_multiindex(

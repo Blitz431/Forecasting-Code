@@ -1,18 +1,3 @@
-"""Phase 5: News & Short Interest pipeline runner.
-
-Orchestrates the full Phase 5 cycle for a list of tickers:
-  1. Fetch news articles (Yahoo Finance + Google News RSS, yfinance fallback)
-  2. Score sentiment with FinBERT (GPU-accelerated)
-  3. Persist articles + scores to data/news/articles/{ticker}.parquet
-  4. Fetch & persist short interest to data/news/short_interest/{ticker}.parquet
-  5. Return per-ticker sentiment summaries
-
-Entry points:
-  run_news_pipeline()       — full Phase 5 run
-  run_sentiment_only()      — skip short interest (faster)
-  run_short_interest_only() — skip news/sentiment
-"""
-
 from __future__ import annotations
 
 import time
@@ -30,6 +15,21 @@ from src.news.short_interest import (
 from src.utils.logging import setup_logger
 
 logger = setup_logger(__name__)
+
+"""
+Purpose: Orchestrate the full Phase 5 pipeline — fetch news, score with FinBERT, store articles and short interest.
+
+Connections:
+  - src/news/scraper.py: fetch_ticker_news() per ticker
+  - src/news/sentiment.py: FinBERTScorer (singleton, cached to avoid reloading model)
+  - src/news/aggregator.py: build_news_dataframe(), save_news(), get_sentiment_summary()
+  - src/news/short_interest.py: fetch/save/get_short_interest_signal()
+  - config/settings.py: articles dir, short interest dir, max articles, sentiment window
+  - cli/news.py: calls run_news_pipeline(), run_sentiment_only(), run_short_interest_only()
+
+In:  list of ticker symbols
+Out: dict[ticker, result] with sentiment (label), avg_score, article_count, short_ratio, high_short_interest
+"""
 
 # Module-level scorer cache — avoids reloading model weights on repeated calls
 _scorer: FinBERTScorer | None = None

@@ -17,6 +17,10 @@ from dashboard.components.tables import style_ranking_table
 from src.utils.input_sanitize import clean_ticker_list
 
 st.set_page_config(page_title="Stock Rankings", page_icon="🏆", layout="wide")
+
+from dashboard.components.market_clock import render_market_clock
+render_market_clock()
+
 st.title("🏆 Stock Rankings")
 st.caption("Composite top-20 picks aggregating forecasts, indicators, ML, news, political, options, and earnings signals.")
 st.divider()

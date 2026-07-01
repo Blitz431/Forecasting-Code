@@ -18,6 +18,10 @@ from dashboard.components.tables import style_sentiment_table, style_generic
 from dashboard.components.ticker_selector import render_ticker_sidebar
 
 st.set_page_config(page_title="News & Sentiment", page_icon="📰", layout="wide")
+
+from dashboard.components.market_clock import render_market_clock
+render_market_clock()
+
 st.title("📰 News & Sentiment")
 st.caption("FinBERT-scored headlines, 7-day rolling sentiment, and short interest data.")
 st.divider()

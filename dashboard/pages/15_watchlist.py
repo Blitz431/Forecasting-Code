@@ -19,6 +19,10 @@ from dashboard.components.tables import style_ranking_table, style_signal_table,
 from src.utils.input_sanitize import clean_ticker
 
 st.set_page_config(page_title="Watchlist", page_icon="👁️", layout="wide")
+
+from dashboard.components.market_clock import render_market_clock
+render_market_clock()
+
 st.title("👁️ Watchlist")
 st.caption("Custom watchlist with daily + weekly signals, peer comparison, and price charts.")
 st.divider()
@@ -92,6 +96,32 @@ def _get_signals(tickers: tuple, tf: str) -> pd.DataFrame:
     return _wm.get_signals(list(tickers), timeframe=tf.lower())
 
 sig_df = _get_signals(tuple(watchlist), timeframe)
+
+# ---------------------------------------------------------------------------#
+# Live quote cache (refreshed every 5 min by cli/scheduler.py's live-quotes job)
+# ---------------------------------------------------------------------------#
+
+from src.scraper.live_quotes import load_quote_cache
+_live_quotes, _quotes_updated_at = load_quote_cache(settings)
+
+if _quotes_updated_at:
+    from datetime import datetime as _dt
+    try:
+        _ts = _dt.fromisoformat(_quotes_updated_at).strftime("%Y-%m-%d %H:%M UTC")
+    except Exception:
+        _ts = _quotes_updated_at
+    st.caption(f"🟢 Live prices as of {_ts} (refreshed every 5 min by the scheduler).")
+else:
+    st.caption(
+        "⚪ No live-quote cache yet — run `python cli/scheduler.py --live-quotes-once` "
+        "or start the scheduler with `--start` to enable live prices here."
+    )
+
+if not sig_df.empty and "Current Price" in sig_df.columns and "Ticker" in sig_df.columns:
+    def _live_or_close(row):
+        q = _live_quotes.get(row["Ticker"])
+        return q["price"] if q else row["Current Price"]
+    sig_df["Current Price"] = sig_df.apply(_live_or_close, axis=1)
 
 if not sig_df.empty:
     # Colour code the Signal column
@@ -188,9 +218,15 @@ with tab_price:
             hi52   = float(closes.tail(252).max())
             lo52   = float(closes.tail(252).min())
             cur    = float(closes.iloc[-1])
+            _live  = _live_quotes.get(selected)
+            if _live:
+                cur = _live["price"]
             range_pct = (cur - lo52) / max(hi52 - lo52, 0.01) * 100
             c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Current Price", f"${cur:.2f}")
+            c1.metric(
+                "Current Price" if _live else "Current Price (last close)",
+                f"${cur:.2f}",
+            )
             c2.metric("52w High",      f"${hi52:.2f}", delta=f"{(cur/hi52-1)*100:.1f}%")
             c3.metric("52w Low",       f"${lo52:.2f}", delta=f"{(cur/lo52-1)*100:.1f}%")
             c4.metric("52w Position",  f"{range_pct:.0f}%",

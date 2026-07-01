@@ -1,13 +1,3 @@
-"""Stacking ensemble model for Phase 4 ML Engine.
-
-Trains a set of base models (XGBoost, LightGBM, CatBoost, Random Forest)
-and fits a Ridge meta-model on their out-of-fold predictions. This reduces
-the variance of any single model and typically beats all individual models.
-
-The stacking uses 5-fold time-series cross-validation (no data leakage —
-each fold's meta-features are predicted by a model that never saw those rows).
-"""
-
 from __future__ import annotations
 
 import numpy as np
@@ -16,6 +6,18 @@ from src.ml.base import MLModel
 from src.utils.logging import setup_logger
 
 logger = setup_logger(__name__)
+
+"""
+Purpose: Stacking ensemble — XGBoost/LightGBM/CatBoost/RF base models + Ridge meta-model via 5-fold OOF predictions.
+
+Connections:
+  - src/ml/base.py: subclasses MLModel, returns MLResult
+  - src/ml/xgboost_model.py, catboost_model.py, random_forest.py: base model implementations used internally
+  - src/ml/runner.py: instantiated and trained via run_ticker()
+
+In:  (X_train, y_train) numpy arrays; uses 5-fold time-series CV internally
+Out: MLResult with stacked predictions and RMSE/MAE/MAPE; .pkl saved to disk
+"""
 
 _N_FOLDS = 5
 

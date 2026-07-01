@@ -1,37 +1,3 @@
-"""Phase 7: Economic event calendar — FOMC, CPI, Jobs, and macro release dates.
-
-Data sources:
-  1. FRED API (via fredapi) — release dates for major macro series:
-       CPIAUCSL  → CPI release schedule
-       UNRATE    → Jobs report release schedule
-       GDP       → GDP release schedule
-     The FRED API provides official release calendars for each series.
-
-  2. Static FOMC calendar — scraped from Federal Reserve HTML or maintained
-     as a static list for the current year.  The Fed publishes FOMC meeting
-     dates well in advance; we maintain them as a hardcoded list updated
-     annually.
-
-For each query this module answers:
-  - Is there a market-moving macro event in the next N days?
-  - How many days until the next FOMC, CPI, or jobs report?
-  - What events happened in the last 7 days that might explain price moves?
-
-Output (used by the ranker and dashboard):
-  upcoming_events   — list of dicts {date, event_type, days_away}
-  fomc_days_away    — int | None (days until next FOMC meeting)
-  cpi_days_away     — int | None (days until next CPI release)
-  jobs_days_away    — int | None (days until next jobs report)
-  event_risk        — float [0, 1]: fraction of upcoming window occupied by events
-
-Storage: data/calendar/economic.parquet  (single file, not per-ticker)
-Columns: event_type, event_name, days_away
-Index:   DatetimeIndex (event date, UTC)
-
-The economic calendar is market-wide (not per-ticker) so it is stored once
-and read by the ranker to apply a global risk adjustment.
-"""
-
 from __future__ import annotations
 
 import json
@@ -45,6 +11,21 @@ from src.scraper.storage import upsert_dataframe, load_dataframe
 from src.utils.logging import setup_logger
 
 logger = setup_logger(__name__)
+
+"""
+STATUS: Work in progress
+
+Purpose: Economic event calendar — tracks upcoming FOMC meetings, CPI releases, and jobs reports.
+
+Connections:
+  - src/scraper/storage.py: upsert_dataframe(), load_dataframe() for parquet persistence
+  - config/settings.py: FRED API key, calendar_dir
+  - src/ranking/ranker.py: planned to read event_risk as a global market-wide adjustment
+  - src/utils/logging.py: logger
+
+In:  FRED API (release calendars for CPIAUCSL, UNRATE, GDP) + static FOMC date list
+Out: data/calendar/economic.parquet (event_type, event_name, days_away — market-wide, not per-ticker)
+"""
 
 # ---------------------------------------------------------------------------#
 # Static FOMC calendar (updated annually)

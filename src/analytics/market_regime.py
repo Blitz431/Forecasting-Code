@@ -1,20 +1,3 @@
-"""Market regime detection: Bull / Bear / Sideways / High-Volatility.
-
-Uses a multi-factor scoring approach:
-  1. VIX level (fear gauge)
-  2. 10Y-2Y yield curve spread (recession signal)
-  3. SPY 50-day and 200-day momentum
-  4. Market breadth (% of S&P 500 stocks above their 200-day MA)
-
-Usage
------
-    from src.analytics.market_regime import MarketRegimeAnalyzer, RegimeLabel
-
-    analyzer = MarketRegimeAnalyzer(settings)
-    snapshot = analyzer.current_snapshot()
-    print(snapshot.regime)    # "Bull" / "Bear" / "Sideways" / "High-Volatility"
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -23,6 +6,18 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+"""
+Purpose: Detect current market regime (Bull/Bear/Sideways/High-Volatility) using VIX, yield curve, SPY momentum, and breadth.
+
+Connections:
+  - src/scraper/storage.py: reads VIXCLS and T10Y2Y macro parquets and SPY daily prices
+  - src/trading/backtester.py: uses regime_overlay to scale position sizes in bear/high-vol regimes
+  - src/reports/morning_report.py: shows regime label in daily morning report header
+
+In:  data/raw/macro/VIXCLS.parquet, T10Y2Y.parquet; data/raw/daily/SPY.parquet
+Out: RegimeSnapshot dataclass (regime: RegimeLabel, vix, yield_spread, spy_momentum, breadth_pct)
+"""
 
 
 class RegimeLabel(str, Enum):

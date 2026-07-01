@@ -1,20 +1,21 @@
-"""Moving averages indicator — SMA/EMA 50/200 + Golden/Death Cross.
-
-Signal logic
-------------
-Golden Cross: SMA50 > SMA200 AND recently crossed above   → STRONG_BUY
-SMA50 > SMA200 (uptrend confirmed)                        → BUY
-Price above SMA50 but SMA50 < SMA200                      → NEUTRAL
-SMA50 < SMA200 (downtrend)                                → SELL
-Death Cross: SMA50 < SMA200 AND recently crossed below    → STRONG_SELL
-"""
-
 from __future__ import annotations
 
 import pandas as pd
 
 from src.indicators._calc import ema, sma
 from src.indicators.base import Indicator, IndicatorResult, Signal
+
+"""
+Purpose: Moving averages indicator — SMA50/SMA200 Golden Cross / Death Cross detection.
+
+Connections:
+  - src/indicators/_calc.py: sma(), ema() math functions
+  - src/indicators/base.py: Indicator ABC, IndicatorResult, Signal types
+  - src/indicators/signal_aggregator.py: called with weight 2.0 (highest weight)
+
+In:  daily OHLCV pd.DataFrame (needs Close, min ~210 rows for SMA200)
+Out: IndicatorResult with Signal enum and MA values/cross details
+"""
 
 _CROSS_LOOKBACK = 5  # bars to look back for a recent cross
 

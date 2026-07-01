@@ -16,6 +16,10 @@ from dashboard.components.charts import sector_donut, ranking_bar, _empty_fig
 from dashboard.components.tables import style_ranking_table, style_generic
 
 st.set_page_config(page_title="Sector Analysis", page_icon="🗂️", layout="wide")
+
+from dashboard.components.market_clock import render_market_clock
+render_market_clock()
+
 st.title("🗂️ Sector Analysis")
 st.caption("Sector breakdown of top picks, concentration warnings, and rotation view.")
 st.divider()

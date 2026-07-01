@@ -17,6 +17,10 @@ from dashboard.components.charts import correlation_matrix as corr_chart, sector
 from dashboard.components.tables import style_generic
 
 st.set_page_config(page_title="Portfolio", page_icon="💼", layout="wide")
+
+from dashboard.components.market_clock import render_market_clock
+render_market_clock()
+
 st.title("💼 Portfolio Analytics")
 st.caption("Sharpe, Sortino, drawdown, beta, correlation matrix, and per-stock attribution.")
 st.divider()

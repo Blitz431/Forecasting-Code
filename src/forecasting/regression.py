@@ -1,21 +1,20 @@
-"""OLS regression forecast method (Method 11).
-
-Models quarterly prices as a linear function of time plus quarterly dummy
-variables that capture systematic seasonal patterns:
-
-    Price_t = β0 + β1·t + β2·Q1 + β3·Q2 + β4·Q3 + ε_t
-
-where Q4 is the implicit baseline.  Coefficients are estimated by ordinary
-least squares (statsmodels OLS).  The forecast simply evaluates the fitted
-equation at future time indices with the appropriate quarterly dummies.
-"""
-
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
 
 from src.forecasting.base import ForecastMethod
+
+"""
+Purpose: OLS regression forecast method 11 — linear time trend with quarterly seasonal dummies.
+
+Connections:
+  - src/forecasting/base.py: subclasses ForecastMethod, returns ForecastResult
+  - src/forecasting/runner.py: instantiated and called via ALL_METHODS list
+
+In:  quarterly price pd.Series
+Out: ForecastResult with OLS-extrapolated forecasts and holdout error metrics
+"""
 
 _SEASONAL_PERIOD = 4
 

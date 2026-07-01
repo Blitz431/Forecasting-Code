@@ -1,13 +1,3 @@
-"""CLI entry point for data scraping.
-
-Usage:
-    python cli/scrape.py                           # Incremental update for S&P 500
-    python cli/scrape.py --backfill                # Full backfill from 2015
-    python cli/scrape.py --tickers AAPL,MSFT,GOOG  # Specific tickers only
-    python cli/scrape.py --prices-only             # Skip macro and dividends
-    python cli/scrape.py --macro-only              # Only FRED macro data
-"""
-
 import argparse
 import sys
 import time
@@ -24,6 +14,21 @@ from src.utils.logging import setup_logger
 from src.utils.tickers import get_tickers
 
 logger = setup_logger("cli.scrape")
+
+"""
+Purpose: Phase 1 CLI — scrape daily prices, macro (FRED), and dividends for S&P 500 or custom tickers.
+
+Connections:
+  - src/scraper/price_scraper.py: scrape_prices() and aggregate_to_quarterly()
+  - src/scraper/macro_scraper.py: scrape_macro()
+  - src/scraper/dividend_scraper.py: scrape_dividends()
+  - src/utils/tickers.py: get_tickers() to resolve S&P 500 list
+  - config/settings.py: raw_daily_dir, raw_quarterly_dir, ticker_source
+  - cli/scheduler.py: invoked as subprocess in job_scrape()
+
+In:  yfinance API (prices/dividends), FRED API (macro series)
+Out: data/raw/daily/*.parquet, data/raw/quarterly/*.parquet, data/macro/*.parquet
+"""
 
 
 def main():

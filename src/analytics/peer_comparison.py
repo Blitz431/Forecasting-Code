@@ -1,14 +1,3 @@
-"""Relative strength comparison of a stock vs its sector peers.
-
-Usage
------
-    from src.analytics.peer_comparison import PeerComparison
-
-    pc = PeerComparison(settings)
-    df = pc.compare("AAPL", lookback_days=63)
-    # Returns DataFrame: ticker, sector, period_return, vs_peer_avg, percentile_rank
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -18,6 +7,18 @@ import numpy as np
 import pandas as pd
 
 from src.analytics.sector_analysis import _STATIC_SECTORS
+
+"""
+Purpose: Compare a ticker's return against its sector peers — relative strength and percentile rank.
+
+Connections:
+  - src/analytics/sector_analysis.py: imports _STATIC_SECTORS peer mapping
+  - config/settings.py: raw_daily_dir for loading peer price data
+  - dashboard: called to populate peer comparison panels
+
+In:  ticker symbol + lookback_days; reads data/raw/daily/{peer}.parquet for each peer
+Out: DataFrame (ticker, sector, period_return, vs_peer_avg, percentile_rank)
+"""
 
 
 # ---------------------------------------------------------------------------#

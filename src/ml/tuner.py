@@ -1,18 +1,3 @@
-"""Optuna hyperparameter optimization for Phase 4 ML models.
-
-Each model type has a defined search space. Tuning uses time-series-safe
-cross-validation (single split with a small internal val set) to prevent
-data leakage.
-
-Public API
-----------
-tune(model_name, X_train, y_train, n_trials, timeout)
-    -> dict   (best hyperparameter dict)
-
-get_tuned_model(model_name, X_train, y_train, n_trials, timeout)
-    -> MLModel (trained with best hyperparameters)
-"""
-
 from __future__ import annotations
 
 import warnings
@@ -23,6 +8,17 @@ import numpy as np
 from src.utils.logging import setup_logger
 
 logger = setup_logger(__name__)
+
+"""
+Purpose: Optuna hyperparameter optimization for all Phase 4 ML models — time-series-safe CV tuning.
+
+Connections:
+  - src/ml/xgboost_model.py, random_forest.py, linear_models.py, catboost_model.py: model classes instantiated with tuned params
+  - src/ml/runner.py: calls get_tuned_model() when tune=True in run_ticker()
+
+In:  (X_train, y_train) numpy arrays + model name string + trial budget
+Out: dict of best hyperparameters; get_tuned_model() returns a trained MLModel
+"""
 
 
 # ------------------------------------------------------------------ #

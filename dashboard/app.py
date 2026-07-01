@@ -18,6 +18,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import streamlit as st
 
 st.set_page_config(page_title="Settings", page_icon="🔐", layout="wide")
+
+from dashboard.components.market_clock import render_market_clock
+render_market_clock()
+
 st.title("🔐 Settings — API Keys & Secrets")
 st.caption(
     "Values are written to the project-root `.env` file. The file is "

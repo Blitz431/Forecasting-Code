@@ -1,20 +1,3 @@
-"""Decomposition-based forecast methods (Methods 1-5).
-
-All five methods use statsmodels ``seasonal_decompose`` to separate a
-quarterly price series into Trend, Seasonal, and Residual components, then
-extrapolate each component forward.
-
-Methods
--------
-1. Additive decomposition + average-trend extrapolation
-2. Multiplicative decomposition + average-trend extrapolation
-3. Additive decomposition + flat-trend (last trend value, conservative)
-4. Additive decomposition + linear-regression trend extrapolation (aggressive)
-5. Ensemble average of Methods 1–4
-
-Minimum data requirement: 3 full seasonal cycles = 12 quarters.
-"""
-
 from __future__ import annotations
 
 import warnings
@@ -24,6 +7,17 @@ import pandas as pd
 from statsmodels.tsa.seasonal import seasonal_decompose
 
 from src.forecasting.base import ForecastMethod
+
+"""
+Purpose: Decomposition-based forecast methods 1–5 (Additive, Multiplicative, Flat-Trend, Linear-Trend, Ensemble).
+
+Connections:
+  - src/forecasting/base.py: subclasses ForecastMethod, returns ForecastResult
+  - src/forecasting/runner.py: instantiated and called via ALL_METHODS list
+
+In:  quarterly price pd.Series (min 12 quarters — 3 full seasonal cycles)
+Out: ForecastResult with forecasts + holdout RMSE/MAE/MAPE per method
+"""
 
 _MIN_PERIODS = 12  # 3 full annual cycles at quarterly frequency
 _SEASONAL_PERIOD = 4  # quarterly data

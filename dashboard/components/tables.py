@@ -1,28 +1,17 @@
-"""Shared styled DataFrame renderers used across all dashboard pages.
-
-Each function returns a ``pandas.io.formats.style.Styler`` object ready to
-pass directly to ``st.dataframe()``.  Consistent colour coding:
-  green  (#26a69a) = bullish / positive / buy
-  red    (#ef5350) = bearish / negative / sell
-  neutral (#424242) background for near-zero values
-
-Available renderers
--------------------
-style_ranking_table(df)     — top-N composite score table with colour coding
-style_signal_table(df)      — indicator signals (Strong Buy … Strong Sell)
-style_forecast_table(df)    — method RMSE comparison, best row highlighted
-style_ml_table(df)          — ML model RMSE comparison
-style_sentiment_table(df)   — news articles with sentiment score colour
-style_congress_table(df)    — congressional trades
-style_insider_table(df)     — insider filing trades
-style_options_table(df)     — options metrics snapshot
-style_earnings_table(df)    — earnings history with beat/miss colour
-style_generic(df)           — plain table with alternating row shading
-"""
-
 from __future__ import annotations
 
 import pandas as pd
+
+"""
+Purpose: Shared Streamlit DataFrame renderers — returns colour-coded Styler objects for ranking, signals, forecasts, ML, sentiment, congress, and generic tables.
+
+Connections:
+  - dashboard/pages/*: imported by every dashboard page that shows a table
+  - dashboard/components/charts.py: shares colour constants (_GREEN, _RED)
+
+In:  pandas DataFrame from any signal/data source
+Out: pandas Styler ready for st.dataframe()
+"""
 
 # ---------------------------------------------------------------------------#
 # Colour constants (matches charts.py)

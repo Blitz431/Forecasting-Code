@@ -1,18 +1,3 @@
-"""Live position tracking synced with Alpaca.
-
-Tracks open positions, average entry price, current P&L, and daily P&L.
-Writes an end-of-day snapshot to ``data/portfolio/snapshots/YYYY-MM-DD.parquet``.
-
-Usage
------
-    from src.trading.portfolio import PortfolioTracker
-
-    tracker = PortfolioTracker(settings)
-    snapshot = tracker.get_snapshot()          # live data from Alpaca
-    tracker.save_eod_snapshot()                # persist to parquet
-    history  = tracker.load_snapshot("2025-01-15")
-"""
-
 from __future__ import annotations
 
 import json
@@ -26,6 +11,19 @@ import pandas as pd
 from src.utils.logging import setup_logger
 
 logger = setup_logger(__name__)
+
+"""
+Purpose: Live portfolio state tracker — syncs open positions with Alpaca, tracks P&L, saves end-of-day snapshots.
+
+Connections:
+  - src/trading/alpaca_client.py: calls list_positions() and get_account() for live data
+  - src/analytics/attribution.py: passes position data for P&L attribution
+  - config/settings.py: portfolio_snapshots_dir
+  - cli/trade.py: instantiates PortfolioTracker and calls save_eod_snapshot()
+
+In:  live Alpaca API data (positions, account value)
+Out: data/portfolio/snapshots/{YYYY-MM-DD}.parquet (open positions, P&L, portfolio value)
+"""
 
 
 # ---------------------------------------------------------------------------#

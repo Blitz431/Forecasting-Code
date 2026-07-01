@@ -17,6 +17,9 @@ from dashboard.components.ticker_selector import render_ticker_sidebar
 
 st.set_page_config(page_title="Stock Summary", page_icon="📋", layout="wide")
 
+from dashboard.components.market_clock import render_market_clock
+render_market_clock()
+
 settings = get_settings()
 
 # ---------------------------------------------------------------------------#
@@ -93,22 +96,53 @@ def _load_price_strip(ticker: str) -> dict:
     }
 
 
-with st.container(border=True):
-    price = _load_price_strip(selected)
+@st.fragment(run_every="10s")
+def _render_price_strip(ticker: str) -> None:
+    price = _load_price_strip(ticker)
     if not price:
         st.info("No price data — run ▶ Run All Analysis first.")
-    else:
+        return
+
+    latest         = price["latest"]
+    day_change     = price["day_change"]
+    day_change_pct = price["day_change_pct"]
+    is_live        = False
+
+    try:
+        from src.scraper.live_quotes import get_live_quote
+        quote = get_live_quote(ticker, settings)
+    except Exception:
+        quote = None
+
+    if quote is not None:
+        latest = quote.price
+        if quote.change is not None and quote.change_pct is not None:
+            day_change     = quote.change
+            day_change_pct = quote.change_pct
+        is_live = True
+
+    badge = "🟢 Live (Alpaca, ~15min delayed)" if is_live else "⚪ Last close"
+    st.caption(badge)
+
+    with st.container(border=True):
         c1, c2, c3, c4 = st.columns(4)
         c1.metric(
             "Price",
-            f"${price['latest']:,.2f}",
-            help="Latest closing price from daily OHLCV data.",
+            f"${latest:,.2f}",
+            help=(
+                "Last-trade price from Alpaca's SIP-consolidated feed (all exchanges), "
+                "refreshed every ~10s. Free-tier data is ~15 minutes delayed, not tick-by-tick "
+                "real-time."
+                if is_live else
+                "Latest closing price from daily OHLCV data — set ALPACA_API_KEY/"
+                "ALPACA_SECRET_KEY in Settings for live prices."
+            ),
         )
-        arrow = "↑" if price["day_change"] >= 0 else "↓"
+        arrow = "↑" if day_change >= 0 else "↓"
         c2.metric(
             "Day Change",
-            f"{price['day_change']:+,.2f} {arrow}",
-            delta=f"{price['day_change_pct']:+.2f}%",
+            f"{day_change:+,.2f} {arrow}",
+            delta=f"{day_change_pct:+.2f}%",
             delta_color="normal",
             help="Dollar and percent change from the prior trading day's close.",
         )
@@ -133,6 +167,13 @@ with st.container(border=True):
                     "High volume on up-days confirms bullish moves."
                 ),
             )
+
+
+_render_price_strip(selected)
+
+# Cached (non-live) price snapshot used as a sane default further down the page
+# (e.g. limit-order defaults in Quick Trade) — the fragment above handles the live view.
+price = _load_price_strip(selected)
 
 st.divider()
 
@@ -266,17 +307,28 @@ with st.container(border=True):
                     msgs = [f"✅ BUY submitted — `{result.order_id[:8]}…` **{result.status.upper()}**"]
 
                     if attach_trail:
-                        ts_r = alpaca.place_trailing_stop(
-                            selected, float(qty),
-                            trail_percent=settings.broker_trailing_stop_pct,
-                        )
-                        if ts_r:
-                            msgs.append(
-                                f"✅ {settings.broker_trailing_stop_pct:.0f}% trailing stop attached "
-                                f"(`{ts_r.order_id[:8]}…`)"
+                        # Alpaca rejects the trailing-stop SELL while the BUY is still
+                        # open, so wait briefly for the fill first.
+                        if alpaca.wait_for_fill(result.order_id, timeout=10.0):
+                            ts_r = alpaca.place_trailing_stop(
+                                selected, float(qty),
+                                trail_percent=settings.broker_trailing_stop_pct,
                             )
+                            if ts_r:
+                                msgs.append(
+                                    f"✅ {settings.broker_trailing_stop_pct:.0f}% trailing stop attached "
+                                    f"(`{ts_r.order_id[:8]}…`)"
+                                )
+                            else:
+                                msgs.append(
+                                    "⚠️ Trailing stop could not be placed — the background "
+                                    "reconciliation sweep will retry within 5 minutes."
+                                )
                         else:
-                            msgs.append("⚠️ Trailing stop could not be placed — attach it manually.")
+                            msgs.append(
+                                "⏳ Buy not filled yet (queued/after-hours) — the background "
+                                "reconciliation sweep will attach the trailing stop once it fills."
+                            )
 
                     # Persist position state for Exit Calendar tracking
                     td_str = tighten_date_val.isoformat() if tighten_mode == "on_date" else ""

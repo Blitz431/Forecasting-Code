@@ -1,38 +1,3 @@
-"""Composite ranking engine — pulls from all upstream signal sources.
-
-Aggregates signals from every Phase (2-7) module into a single normalised
-composite score per ticker, then returns the top-N picks.
-
-Signal sources and weights
---------------------------
-| Signal            | Source                        | Weight |
-|-------------------|-------------------------------|--------|
-| forecast_signal   | data/forecasts/ (best method) |  2.0   |
-| indicator_score   | indicators/signal_aggregator  |  2.0   |
-| ml_signal         | ml/runner.predict_latest()    |  2.0   |
-| news_sentiment    | news/aggregator.get_summary() |  1.0   |
-| short_interest    | news/short_interest           |  0.75  |
-| congress_signal   | political/congress_tracker    |  1.0   |
-| insider_signal    | political/insider_tracker     |  1.0   |
-| options_flow      | options/options_data          |  1.0   |
-| iv_signal         | options/implied_vol           |  0.5   |
-| earnings_signal   | calendar/earnings             |  0.5   |
-
-All signals are normalised to [-1, +1] before weighting.
-Missing signals (no data yet) are excluded from the weighted average.
-
-Public API
-----------
-rank_tickers(tickers, settings, include_ml, include_indicators)
-    -> list[RankEntry]          (sorted desc by composite_score)
-
-top_picks(n, settings, include_ml, include_indicators)
-    -> list[RankEntry]          (top-N from the full universe)
-
-to_dataframe(entries)
-    -> pd.DataFrame             (display-ready table)
-"""
-
 from __future__ import annotations
 
 import traceback
@@ -46,6 +11,27 @@ from config.settings import get_settings
 from src.utils.logging import setup_logger
 
 logger = setup_logger(__name__)
+
+"""
+Purpose: Aggregate all 10 Phase 2–7 signals into a weighted composite score and rank tickers.
+
+Connections:
+  - src/forecasting/runner.py → data/forecasts/{ticker}.parquet (weight 2.0)
+  - src/indicators/signal_aggregator.py → data/indicators/{ticker}.parquet (weight 2.0)
+  - src/ml/runner.py: predict_latest() called directly (weight 2.0)
+  - src/news/aggregator.py: get_sentiment_summary() (weight 1.0)
+  - src/news/short_interest.py: get_short_interest_signal() (weight 0.75)
+  - src/political/congress_tracker.py: get_congress_signal() (weight 1.0)
+  - src/political/insider_tracker.py: get_insider_signal() (weight 1.0)
+  - src/options/options_data.py: get_flow_signal() (weight 1.0)
+  - src/options/implied_vol.py: get_vol_signal() (weight 0.5)
+  - src/calendar/earnings.py: get_earnings_signal() (weight 0.5)
+  - cli/rank.py: calls rank_tickers(), top_picks(), to_dataframe()
+  - src/trading/backtester.py, src/alerts/triggers.py: consume RankEntry list
+
+In:  all signal parquets + live API calls for ML signal
+Out: list[RankEntry] sorted by composite_score; data/rankings/{ticker}.parquet
+"""
 
 # ---------------------------------------------------------------------------#
 # Weights

@@ -17,6 +17,10 @@ from dashboard.components.tables import style_options_table, style_generic
 from dashboard.components.ticker_selector import render_ticker_sidebar
 
 st.set_page_config(page_title="Options Flow", page_icon="🎯", layout="wide")
+
+from dashboard.components.market_clock import render_market_clock
+render_market_clock()
+
 st.title("🎯 Options Flow")
 st.caption("Put/Call ratio, unusual activity flags, and implied vs historical volatility.")
 st.divider()

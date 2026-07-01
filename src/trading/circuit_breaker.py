@@ -1,25 +1,3 @@
-"""Circuit breaker — kill switch for runaway losses.
-
-Triggers
---------
-1. Portfolio drops ≥ 10% in a single day   → halt all new orders for the session.
-2. Any single position is down ≥ 15% from entry → force-sell that position.
-3. Manual emergency_stop()                 → close every open position immediately.
-
-State is persisted to ``data/circuit_breaker_state.json`` so it survives process
-restarts (e.g., a crash during the trading day).
-
-Usage
------
-    from src.trading.circuit_breaker import CircuitBreaker
-
-    cb = CircuitBreaker(settings)
-    cb.check_portfolio(account)          # raises CircuitBreakerTripped if triggered
-    cb.check_positions(positions, client)# force-sells losers
-    cb.emergency_stop(client)            # flatten everything
-    cb.reset()                           # clear state at start of new day
-"""
-
 from __future__ import annotations
 
 import json
@@ -30,6 +8,19 @@ from pathlib import Path
 from src.utils.logging import setup_logger
 
 logger = setup_logger(__name__)
+
+"""
+Purpose: Circuit breaker — halts all trading when portfolio drops ≥ 10% in a day or a single stock drops ≥ 15%.
+
+Connections:
+  - src/trading/alpaca_client.py: calls close_position() and cancel_all_orders() when triggered
+  - config/settings.py: circuit_breaker_daily_pct (10%), circuit_breaker_single_stock_pct (15%), circuit_breaker_state_file
+  - cli/trade.py and src/trading/backtester.py: calls check_portfolio() and check_positions() each trading loop iteration
+  - src/alerts/triggers.py: reads circuit_breaker_state.json to generate "circuit breaker tripped" alert
+
+In:  current account value and position P&L from AlpacaClient
+Out: raises CircuitBreakerTripped; persists state to data/circuit_breaker_state.json
+"""
 
 
 class CircuitBreakerTripped(Exception):

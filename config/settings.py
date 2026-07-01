@@ -1,9 +1,18 @@
-"""Central configuration for AutoStockAnalyzer."""
-
 from pathlib import Path
 from typing import Optional
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+"""
+Purpose: Central Pydantic configuration — loads all app settings from .env / environment variables.
+
+Connections:
+  - Used by: every module calls get_settings() to access paths, API keys, and trading parameters
+  - standalone — no project-internal imports
+
+In:  .env file and environment variables (ALPACA_*, FRED_*, ML_MODEL_SECRET, etc.)
+Out: typed Settings object with nested AlpacaSettings, FredSettings, AlertSettings sub-configs
+"""
 
 
 # Project root directory
@@ -161,6 +170,10 @@ class Settings(BaseSettings):
     tax_lots_dir: Path = DATA_DIR / "tax_lots"
     trade_journal_dir: Path = DATA_DIR / "trade_journal"
     circuit_breaker_state_file: Path = DATA_DIR / "circuit_breaker_state.json"
+
+    # Live quotes (Alpaca market data — Phase 13)
+    live_quotes_dir: Path = DATA_DIR / "live_quotes"
+    live_quotes_refresh_seconds: int = 300
 
     # Trading — Phase 10 rules
     kelly_criterion_enabled: bool = False

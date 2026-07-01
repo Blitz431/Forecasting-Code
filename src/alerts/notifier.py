@@ -1,28 +1,3 @@
-"""Multi-channel alert dispatcher.
-
-Supported channels
-------------------
-- Discord  : discord-webhook  (DISCORD_WEBHOOK_URL in .env)
-- Email    : smtplib  (SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASSWORD / ALERT_EMAIL_TO)
-
-All credentials are loaded from ``config/settings.py`` → ``AlertSettings``,
-which reads them from the ``.env`` file.  Any channel whose credentials are
-missing is silently skipped.
-
-Public API
-----------
-    notifier = AlertNotifier(settings)
-    notifier.send_alert("Trade Signal", "AAPL BUY triggered", level="info")
-
-``level`` is one of:
-  "info"     — Discord embed: blue  (0x3498DB)
-  "warning"  — Discord embed: yellow (0xF1C40F)
-  "critical" — Discord embed: red  (0xE74C3C) + also appended to data/alerts/alerts.log
-
-Critical alerts are logged to ``data/alerts/alerts.log`` regardless of whether
-any channel is configured.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -36,6 +11,18 @@ from config.settings import get_settings
 from src.utils.logging import setup_logger
 
 logger = setup_logger(__name__)
+
+"""
+Purpose: Multi-channel alert dispatcher — sends AlertEvents to Discord webhook and/or SMTP email.
+
+Connections:
+  - src/alerts/triggers.py: receives list[AlertEvent] to dispatch
+  - config/settings.py: AlertSettings (discord_webhook_url, smtp_host/port/user/password, alert_email_to)
+  - cli/report.py: calls send_alert() after generating morning report alerts
+
+In:  AlertEvent (title, body, level info/warning/critical)
+Out: HTTP POST to Discord webhook; SMTP email via smtplib; critical alerts appended to data/alerts/alerts.log
+"""
 
 # ---------------------------------------------------------------------------#
 # Colour map for Discord embeds

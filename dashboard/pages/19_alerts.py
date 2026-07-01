@@ -22,6 +22,10 @@ import streamlit as st
 from config.settings import get_settings
 
 st.set_page_config(page_title="Alerts", page_icon="🔔", layout="wide")
+
+from dashboard.components.market_clock import render_market_clock
+render_market_clock()
+
 st.title("🔔 Alerts")
 st.caption("Active trigger alerts and notification log.")
 st.divider()

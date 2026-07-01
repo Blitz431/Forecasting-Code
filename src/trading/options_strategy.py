@@ -1,39 +1,3 @@
-"""Automated options trading strategy (Phase 12).
-
-Capital budget
---------------
-``settings.options_capital`` is a fixed-dollar pool separate from the main
-portfolio.  The strategy never commits more than this amount across all open
-option positions.  Per-position max is 5% of the budget.
-
-Entry conditions  (all three signals must align)
--------------------------------------------------
-  Call : flow_signal >  options_min_flow_signal
-         AND vol_signal >  options_min_vol_signal
-         AND composite_score > 0.5
-
-  Put  : flow_signal < -options_min_flow_signal
-         AND vol_signal < -options_min_vol_signal
-         AND composite_score < -0.5
-
-Contract selection
-------------------
-  - Expiry : options_min_dte … options_max_dte (default 30–45 DTE)
-  - Strike : ATM or first OTM within 2% of spot
-  - Qty    : 1 contract; cost must fit inside the per-position cap
-
-Exit rules
-----------
-  - 50% profit target on premium paid
-  - 50% max-loss stop on premium paid
-  - options_exit_dte guard (default ≤7 DTE)
-  - IV-crush: entered on an IV spike that has since cleared
-
-State persistence
------------------
-  data/options_positions.json
-"""
-
 from __future__ import annotations
 
 import datetime
@@ -44,6 +8,20 @@ from pathlib import Path
 from src.utils.logging import setup_logger
 
 logger = setup_logger(__name__)
+
+"""
+Purpose: Automated options trading strategy — enters calls/puts when flow, vol, and composite signals align; manages a fixed capital pool.
+
+Connections:
+  - src/options/options_data.py: reads flow_signal per ticker to screen entries
+  - src/options/implied_vol.py: reads vol_signal to confirm IV-backed entries
+  - src/ranking/ranker.py: reads composite_score as third confirmation signal
+  - src/trading/alpaca_client.py: places options orders via Alpaca API
+  - config/settings.py: options_capital, options_max_dte, options_min_dte, options_exit_dte, profit_target, stop_loss
+
+In:  flow_signal, vol_signal, composite_score per ticker + live options chain via yfinance
+Out: options order placements; state persisted to data/options_positions.json
+"""
 
 _STATE_FILE = "options_positions.json"
 

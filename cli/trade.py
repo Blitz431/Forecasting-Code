@@ -211,6 +211,16 @@ def run(mode: str, dry_run: bool = False) -> None:
         _save_states(saved_states)
 
     # ------------------------------------------------------------------ #
+    # 4c. Reconcile trailing stops on every held position — catches stops that
+    #     failed to attach previously (e.g. buy filled after this script already
+    #     moved on) and positions opened outside this script entirely.
+    # ------------------------------------------------------------------ #
+    from src.trading.stop_manager import reconcile_trailing_stops
+    newly_protected = reconcile_trailing_stops(client, settings)
+    if newly_protected:
+        print(f"[STOP-RECONCILE] Attached trailing stop to {len(newly_protected)}: {newly_protected}")
+
+    # ------------------------------------------------------------------ #
     # 5. Market regime
     # ------------------------------------------------------------------ #
     from src.analytics.market_regime import MarketRegimeAnalyzer
@@ -487,15 +497,25 @@ def run(mode: str, dry_run: bool = False) -> None:
 
             order = client.place_order(ticker, sizing.shares, "buy")
             if order:
-                # Broker-side trailing stop (tracked tick-by-tick by Alpaca)
-                ts = client.place_trailing_stop(
-                    ticker,
-                    sizing.shares,
-                    trail_percent=settings.broker_trailing_stop_pct,
-                )
-                if ts is None:
-                    logger.warning(
-                        f"[{ticker}] Broker trailing stop failed — software stop is backup."
+                # Alpaca rejects a trailing-stop SELL while the BUY is still open, so wait
+                # for the fill first. If it doesn't fill in time (e.g. queued after-hours),
+                # the reconciliation sweep (step 4c, and the scheduled job) will attach the
+                # stop once it does fill.
+                if client.wait_for_fill(order.order_id, timeout=10.0):
+                    ts = client.place_trailing_stop(
+                        ticker,
+                        sizing.shares,
+                        trail_percent=settings.broker_trailing_stop_pct,
+                    )
+                    if ts is None:
+                        logger.warning(
+                            f"[{ticker}] Broker trailing stop failed after fill — "
+                            "will retry via reconciliation sweep."
+                        )
+                else:
+                    logger.info(
+                        f"[{ticker}] Buy not filled within 10s (queued/after-hours) — "
+                        "trailing stop will be attached by the next reconciliation sweep."
                     )
 
                 # Derive holding horizon from dominant signal sources

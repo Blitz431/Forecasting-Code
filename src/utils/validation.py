@@ -1,10 +1,20 @@
-"""Data quality checks and validation utilities."""
-
 import pandas as pd
 
 from src.utils.logging import setup_logger
 
 logger = setup_logger(__name__)
+
+"""
+Purpose: Data quality checks for OHLCV DataFrames — column presence, negative prices, and freshness.
+
+Connections:
+  - src/scraper/storage.py: calls remove_duplicates() on every upsert
+  - src/scraper/price_scraper.py: calls validate_ohlcv() after each batch download
+  - src/utils/logging.py: logger
+
+In:  pd.DataFrame or pd.Series
+Out: bool pass/fail or cleaned DataFrame (remove_duplicates)
+"""
 
 
 def validate_ohlcv(df: pd.DataFrame, ticker: str = "") -> bool:

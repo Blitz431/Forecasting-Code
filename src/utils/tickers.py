@@ -1,11 +1,3 @@
-"""Ticker universe management — fetch S&P 500 component list.
-
-Fetch order:
-  1. Local cache file  (data/tickers/sp500.txt)  — refreshed if older than 7 days
-  2. Wikipedia scrape  (html.parser, no lxml needed)
-  3. Hard-coded 503-ticker fallback list
-"""
-
 from __future__ import annotations
 
 import datetime
@@ -16,6 +8,17 @@ import pandas as pd
 from src.utils.logging import setup_logger
 
 logger = setup_logger(__name__)
+
+"""
+Purpose: Fetch and cache the S&P 500 ticker universe (Wikipedia → local cache → 503-ticker fallback).
+
+Connections:
+  - src/utils/logging.py: logger
+  - cli/scrape.py, cli/forecast.py, cli/indicators.py, cli/ml.py, cli/news.py, cli/rank.py: all call get_tickers()
+
+In:  optional source string ("sp500" or comma-separated tickers)
+Out: list[str] of ticker symbols; cache written to data/tickers/sp500.txt (refreshed every 7 days)
+"""
 
 # Project root → data/tickers/sp500.txt
 _CACHE_FILE = Path(__file__).parent.parent.parent / "data" / "tickers" / "sp500.txt"

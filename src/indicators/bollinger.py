@@ -1,22 +1,21 @@
-"""Bollinger Bands indicator (20-period, 2 std dev).
-
-Signal logic (based on %B — normalised position within bands)
---------------------------------------------------------------
-%B < 0      (below lower band)  → STRONG_BUY  (price extended below bands)
-%B < 0.2                        → BUY
-0.2 ≤ %B ≤ 0.8                 → NEUTRAL
-%B > 0.8                        → SELL
-%B > 1.0    (above upper band)  → STRONG_SELL (price extended above bands)
-
-Bandwidth squeeze (low volatility preceding a breakout) is noted in details.
-"""
-
 from __future__ import annotations
 
 import pandas as pd
 
 from src.indicators._calc import bollinger_bands, bb_position
 from src.indicators.base import Indicator, IndicatorResult, Signal
+
+"""
+Purpose: Bollinger Bands indicator (20-period, 2σ) — %B position and bandwidth squeeze detection.
+
+Connections:
+  - src/indicators/_calc.py: bollinger_bands(), bb_position() math functions
+  - src/indicators/base.py: Indicator ABC, IndicatorResult, Signal types
+  - src/indicators/signal_aggregator.py: called with weight 1.0
+
+In:  daily OHLCV pd.DataFrame (needs Close, min ~25 rows)
+Out: IndicatorResult with Signal enum and %B value
+"""
 
 
 class BollingerBandsIndicator(Indicator):

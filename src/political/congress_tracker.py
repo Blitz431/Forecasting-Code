@@ -1,26 +1,3 @@
-"""Phase 6: Congressional trading tracker via Quiver Quant.
-
-Fetches U.S. Senate and House stock trades filed under the STOCK Act.
-Data is sourced from the Quiver Quant public API:
-  https://api.quiverquant.com/beta/historical/congresstrading/{ticker}
-
-Each record captures who traded, which chamber (House/Senate), the
-transaction type (Purchase/Sale), the approximate dollar amount, and the
-filing date. A rolling signal function aggregates net buy pressure over a
-configurable lookback window (default: 90 days).
-
-Storage: data/political/congress/{ticker}.parquet
-Columns: representative, transaction, amount_mid, party, chamber,
-         report_date (all indexed by trade date as DatetimeIndex).
-
-Signal output (used by ranker.py and ml/feature_engineer.py):
-  congress_net_buys    — number of buy transactions in window
-  congress_net_sells   — number of sell transactions in window
-  congress_buy_value   — total $ value of buys (estimated midpoints)
-  congress_sell_value  — total $ value of sells (estimated midpoints)
-  congress_signal      — float in [-1, 1]: positive = net bullish activity
-"""
-
 from __future__ import annotations
 
 import re
@@ -36,6 +13,19 @@ from src.scraper.storage import upsert_dataframe, load_dataframe
 from src.utils.logging import setup_logger
 
 logger = setup_logger(__name__)
+
+"""
+Purpose: Fetch and track U.S. congressional stock trades (STOCK Act) via Quiver Quant API.
+
+Connections:
+  - src/scraper/storage.py: upsert_dataframe(), load_dataframe() for parquet persistence
+  - config/settings.py: quiver_base_url, congress_lookback_days, political_congress_dir
+  - src/ranking/ranker.py: calls get_congress_signal() as one ranking input
+
+In:  ticker symbol string
+Out: data/political/congress/{ticker}.parquet (representative, transaction, amount_mid, party, chamber, report_date)
+     get_congress_signal() → float [-1, +1] based on net buy/sell value over lookback window
+"""
 
 # ---------------------------------------------------------------------------#
 # Amount parsing

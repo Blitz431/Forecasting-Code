@@ -1,22 +1,3 @@
-"""ML Forecasting Engine runner — orchestrates all models for one or many tickers.
-
-Public API
-----------
-run_ticker(ticker, settings, target_days, tune, feature_select, deep_learning, save)
-    -> list[MLResult]
-
-run_tickers(tickers, settings, ...)
-    -> dict[str, list[MLResult]]
-
-comparison_table(results) -> pd.DataFrame
-best_result(results)      -> MLResult | None
-
-predict_latest(ticker, model_name, settings, target_days)
-    -> float   (predicted next-N-day return for the most recent available data)
-
-save_results(results, ticker, output_dir) -> Path
-"""
-
 from __future__ import annotations
 
 import warnings
@@ -32,6 +13,22 @@ from src.ml.walk_forward import apply_split, settings_split
 from src.utils.logging import setup_logger
 
 logger = setup_logger(__name__)
+
+"""
+Purpose: Orchestrate all ML models for one or many tickers — load features, train, evaluate, predict, save.
+
+Connections:
+  - src/ml/feature_engineer.py: load_and_build() to build feature matrix
+  - src/ml/walk_forward.py: settings_split(), apply_split() for time-series splits
+  - src/ml/base.py: MLModel ABC, MLResult types
+  - src/ml/xgboost_model.py, random_forest.py, linear_models.py, lstm_model.py,
+    transformer_model.py, catboost_model.py, ensemble_model.py: all model implementations
+  - cli/ml.py: calls run_ticker(), run_tickers(), comparison_table(), predict_latest()
+  - src/ranking/ranker.py: reads prediction parquets as one ranking signal
+
+In:  data/raw/daily, macro, dividends parquets
+Out: data/ml_models/{ticker}_{model}.pkl (trained models), data/ml_predictions/{ticker}.parquet
+"""
 
 
 # ------------------------------------------------------------------ #

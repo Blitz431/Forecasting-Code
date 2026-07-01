@@ -1,32 +1,3 @@
-"""Phase 7: Options flow — Put/Call ratio and unusual volume detection.
-
-Pulls live options chains via yfinance for one or more tickers and computes:
-  - put_call_ratio     : total put open interest / total call open interest
-  - total_call_volume  : sum of call volume across all strikes/expiries
-  - total_put_volume   : sum of put volume across all strikes/expiries
-  - unusual_activity   : True when any single contract's volume exceeds
-                         ``options_unusual_volume_multiplier * open_interest``
-                         (default: 2×), indicating a potential large directional bet
-  - flow_signal        : [-1, 1] float — low put/call ratio = bullish options sentiment
-
-Options chains are fetched fresh from yfinance on demand (not persisted to
-Parquet, because options data is highly time-sensitive and chains change
-intraday).  Only the computed *summary metrics* are persisted so we can
-track put/call ratio trends over time.
-
-Storage: data/options/{ticker}.parquet
-Columns: put_call_ratio, total_call_volume, total_put_volume,
-         unusual_activity, flow_signal
-Index:   DatetimeIndex (fetch date, UTC)
-
-Signal output (for ranker.py and ml/feature_engineer.py):
-  put_call_ratio     — raw ratio (< 0.7 bullish, > 1.0 bearish heuristic)
-  total_call_volume
-  total_put_volume
-  unusual_activity   — bool flag
-  flow_signal        — normalised [-1, 1]: positive = bullish call dominance
-"""
-
 from __future__ import annotations
 
 import time
@@ -41,6 +12,18 @@ from src.scraper.storage import upsert_dataframe, load_dataframe
 from src.utils.logging import setup_logger
 
 logger = setup_logger(__name__)
+
+"""
+Purpose: Fetch options chain via yfinance; compute put/call ratio, unusual volume flag, and flow signal.
+
+Connections:
+  - src/scraper/storage.py: upsert_dataframe(), load_dataframe() to persist summary metrics
+  - config/settings.py: options_unusual_volume_multiplier, options_dir
+  - src/ranking/ranker.py: calls get_flow_signal() with weight 1.0
+
+In:  ticker symbol string (live yfinance options chain — not persisted raw; chains change intraday)
+Out: data/options/{ticker}.parquet (put_call_ratio, total_call_volume, total_put_volume, unusual_activity, flow_signal)
+"""
 
 
 # ---------------------------------------------------------------------------#

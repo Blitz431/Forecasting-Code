@@ -1,20 +1,21 @@
-"""MACD indicator (12-26-9).
-
-Signal logic
-------------
-MACD line crosses above signal line AND histogram expanding  → STRONG_BUY
-MACD line above signal line (positive momentum)             → BUY
-MACD and signal both near zero                              → NEUTRAL
-MACD line below signal line                                 → SELL
-MACD crosses below signal AND histogram contracting         → STRONG_SELL
-"""
-
 from __future__ import annotations
 
 import pandas as pd
 
 from src.indicators._calc import macd as _macd
 from src.indicators.base import Indicator, IndicatorResult, Signal
+
+"""
+Purpose: MACD indicator (12-26-9) — momentum signal from EMA crossover and histogram direction.
+
+Connections:
+  - src/indicators/_calc.py: macd() math function
+  - src/indicators/base.py: Indicator ABC, IndicatorResult, Signal types
+  - src/indicators/signal_aggregator.py: called with weight 2.0 (highest weight)
+
+In:  daily OHLCV pd.DataFrame (needs Close, min ~35 rows)
+Out: IndicatorResult with Signal enum and MACD/signal/histogram values
+"""
 
 
 class MACDIndicator(Indicator):

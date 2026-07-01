@@ -1,15 +1,18 @@
-"""User-input sanitizers for Streamlit pages.
-
-Validates and normalises free-text inputs before they reach any downstream
-code (tickers used in file paths, cache keys, API calls, etc.). All helpers
-fail closed: invalid items are dropped (and reported back via the
-``rejected`` channel where applicable) rather than raising.
-"""
-
 from __future__ import annotations
 
 import re
 from typing import Iterable
+
+"""
+Purpose: Sanitize free-text user inputs from Streamlit pages — normalize tickers, strip control chars.
+
+Connections:
+  - dashboard/pages/: imports clean_ticker() / clean_ticker_list() before any API or file access
+  - standalone — no project-internal imports
+
+In:  raw user-typed string (ticker symbols or free text)
+Out: (accepted list, rejected list) tuple, or cleaned string
+"""
 
 # Ticker symbols we accept: 1-10 chars, start with a letter, may include
 # digits, dot, or hyphen (covers tickers like BRK.B, BF-B, RDS.A).

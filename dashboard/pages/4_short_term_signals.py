@@ -17,6 +17,10 @@ from dashboard.components.tables import style_signal_table, style_generic
 from dashboard.components.ticker_selector import render_ticker_sidebar
 
 st.set_page_config(page_title="Short-Term Signals", page_icon="📡", layout="wide")
+
+from dashboard.components.market_clock import render_market_clock
+render_market_clock()
+
 st.title("📡 Short-Term Technical Signals")
 st.caption("9 indicator signals with weighted composite score — RSI, MACD, Bollinger, Stochastic, EMA/SMA, Volume, Momentum, Fundamentals, Correlation.")
 st.divider()

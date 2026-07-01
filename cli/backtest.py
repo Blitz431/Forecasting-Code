@@ -1,34 +1,3 @@
-"""CLI entry point for the backtester.
-
-Usage
------
-    # Full paper-trading simulation (default windows)
-    python cli/backtest.py --mode full-sim
-
-    # Custom train/test windows
-    python cli/backtest.py --mode full-sim --train 2015-2020 --test 2020-2026
-
-    # Quick smoke test with fewer tickers
-    python cli/backtest.py --mode full-sim --train 2015-2020 --test 2020-2024 \\
-        --capital 50000 --top-n 10
-
-    # Print summary only (no trade log)
-    python cli/backtest.py --mode full-sim --no-trades
-
-Options
--------
---mode          full-sim (only mode currently supported)
---train         YYYY-YYYY range for training data (signals use only this history
-                before the test window starts)
---test          YYYY-YYYY range to simulate
---capital       Initial paper portfolio value (default 100000)
---top-n         Max positions to hold at once (default 20)
---slippage-bps  One-way slippage in basis points (default 5)
---circuit-pct   Circuit-breaker daily drop % threshold (default 0.10)
---no-trades     Skip printing the full trade log
---save          Save results to data/backtest_results/ as Parquet files
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -36,6 +5,17 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+"""
+Purpose: Backtest CLI — run a paper-trading walk-forward simulation over a configurable train/test window.
+
+Connections:
+  - src/trading/backtester.py: BacktestConfig, Backtester.run()
+  - config/settings.py: data_dir for output paths
+
+In:  all signal parquets in data/ + daily OHLCV prices (via Backtester internally)
+Out: equity curve metrics printed to stdout; optionally saves to data/backtest_results/
+"""
 
 
 def parse_year_range(s: str) -> tuple[str, str]:

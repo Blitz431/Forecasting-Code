@@ -1,13 +1,3 @@
-"""CLI entry point for Phase 3 — Short-Term Technical Indicators.
-
-Usage examples
---------------
-    python cli/indicators.py --ticker AAPL
-    python cli/indicators.py --tickers AAPL,MSFT,GOOG
-    python cli/indicators.py --ticker AAPL --compact
-    python cli/indicators.py --all
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -23,6 +13,19 @@ from src.scraper.storage import get_ticker_filepath, list_stored_tickers, load_d
 from src.utils.logging import setup_logger
 
 logger = setup_logger("cli.indicators")
+
+"""
+Purpose: Phase 3 CLI — run all 9 technical indicators and print composite signal table per ticker.
+
+Connections:
+  - src/indicators/signal_aggregator.py: run_and_aggregate() for per-ticker composite
+  - src/scraper/storage.py: list_stored_tickers(), load_dataframe()
+  - config/settings.py: raw_daily_dir
+  - cli/scheduler.py: invoked as subprocess in job_indicators()
+
+In:  data/raw/daily/*.parquet (daily OHLCV)
+Out: indicator table printed to stdout; no files written
+"""
 
 # Bar chart for the score display
 _BAR_FULL = "#"

@@ -1,34 +1,3 @@
-"""Phase 7: Earnings calendar — upcoming dates and historical beat/miss record.
-
-Data source: yfinance (Ticker.calendar for next earnings date,
-             Ticker.earnings_history for historical EPS actuals vs estimates).
-
-For each ticker this module provides:
-  1. next_earnings_date      — when the next report is due (datetime UTC or None)
-  2. days_to_earnings        — calendar days until that date (negative = past)
-  3. earnings_approaching    — True when within settings.earnings_upcoming_days
-  4. beat_rate               — fraction of last N quarters where EPS beat estimate
-  5. avg_eps_surprise_pct    — average % surprise (positive = consistent beats)
-  6. earnings_signal         — [-1, 1] composite: upcoming date risk + beat history
-
-Signal logic:
-  - A stock approaching earnings (< 14 days) with a strong beat history
-    gets a mild positive boost (market often drifts up into earnings for
-    consistent beaters).
-  - Approaching earnings with a miss history is a mild negative flag.
-  - Far from earnings: signal is driven purely by beat rate relative to 50%.
-
-Formula:
-  beat_component  = (beat_rate - 0.5) * 2  → [-1, 1]
-  approach_factor = 1.0 if days_to_earnings <= 14 else 0.5
-  earnings_signal = beat_component * approach_factor
-
-Storage: data/calendar/earnings/{ticker}.parquet
-Columns: next_earnings_date, days_to_earnings, earnings_approaching,
-         beat_rate, avg_eps_surprise_pct, earnings_signal
-Index:   DatetimeIndex (fetch date, UTC)
-"""
-
 from __future__ import annotations
 
 import time
@@ -43,6 +12,19 @@ from src.scraper.storage import upsert_dataframe, load_dataframe
 from src.utils.logging import setup_logger
 
 logger = setup_logger(__name__)
+
+"""
+Purpose: Fetch upcoming earnings dates and historical EPS beat/miss records from yfinance; produce earnings signal.
+
+Connections:
+  - src/scraper/storage.py: upsert_dataframe(), load_dataframe() for parquet persistence
+  - config/settings.py: earnings_upcoming_days, earnings_lookback_days, calendar_dir
+  - src/ranking/ranker.py: calls get_earnings_signal() with weight 0.5
+  - src/alerts/triggers.py: uses earnings_approaching flag to fire "earnings approaching" alerts
+
+In:  ticker symbol string (yfinance API call for calendar and earnings_history)
+Out: data/calendar/earnings/{ticker}.parquet (next_earnings_date, days_to_earnings, beat_rate, earnings_signal)
+"""
 
 
 # ---------------------------------------------------------------------------#

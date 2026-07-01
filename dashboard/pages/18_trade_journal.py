@@ -20,6 +20,10 @@ from config.settings import get_settings
 from dashboard.components.tables import style_generic
 
 st.set_page_config(page_title="Trade Journal", page_icon="📓", layout="wide")
+
+from dashboard.components.market_clock import render_market_clock
+render_market_clock()
+
 st.title("📓 Trade Journal")
 st.caption("Append-only audit log of every trade with entry/exit reasons, signal triggers, P&L, and tax lots.")
 st.divider()

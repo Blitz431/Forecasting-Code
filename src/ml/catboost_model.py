@@ -1,10 +1,3 @@
-"""CatBoost gradient-boosting model for Phase 4 ML Engine.
-
-CatBoost is often competitive with XGBoost/LightGBM on financial data and
-handles ordered (time-series) boosting natively, which reduces overfitting.
-GPU acceleration is used automatically when a CUDA device is available.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -15,6 +8,18 @@ from src.ml.base import MLModel
 from src.utils.logging import setup_logger
 
 logger = setup_logger(__name__)
+
+"""
+Purpose: CatBoost gradient-boosting model with ordered boosting — reduces overfitting on time-series data for Phase 4.
+
+Connections:
+  - src/ml/base.py: subclasses MLModel, returns MLResult
+  - src/ml/runner.py: instantiated and trained via run_ticker()
+  - src/ml/ensemble_model.py: used as one of the base models in StackingEnsemble
+
+In:  (X_train, y_train) numpy arrays
+Out: MLResult with predictions, RMSE/MAE/MAPE; .pkl saved to disk
+"""
 
 
 def _cuda_available() -> bool:

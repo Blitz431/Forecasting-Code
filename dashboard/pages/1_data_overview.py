@@ -1,8 +1,3 @@
-"""Page 1 — Data Overview.
-
-Browse all available ticker data, date ranges, row counts, and data quality.
-"""
-
 from __future__ import annotations
 import sys
 from pathlib import Path
@@ -16,11 +11,27 @@ from dashboard.components.charts import candlestick, price_line, _empty_fig
 from dashboard.components.tables import style_generic
 
 st.set_page_config(page_title="Data Overview", page_icon="📊", layout="wide")
+
+from dashboard.components.market_clock import render_market_clock
+render_market_clock()
+
 st.title("📊 Data Overview")
 st.caption("Browse available OHLCV price data, date ranges, and data quality statistics.")
 st.divider()
 
 settings = get_settings()
+
+"""
+Purpose: Streamlit page — browse all scraped tickers (date ranges, row counts, quality) and drill into OHLCV candlestick charts.
+
+Connections:
+  - dashboard/components/charts.py: candlestick() and price_line() for drill-down view
+  - dashboard/components/tables.py: style_generic() for the inventory table
+  - config/settings.py: raw_daily_dir, raw_quarterly_dir
+
+In:  data/raw/daily/*.parquet and data/raw/quarterly/*.parquet
+Out: interactive Streamlit page (no files written)
+"""
 
 
 # ---------------------------------------------------------------------------#

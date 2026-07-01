@@ -18,6 +18,10 @@ from src.utils.input_sanitize import clean_ticker_list
 from dashboard.components.ticker_selector import render_ticker_sidebar
 
 st.set_page_config(page_title="Peer Comparison", page_icon="⚖️", layout="wide")
+
+from dashboard.components.market_clock import render_market_clock
+render_market_clock()
+
 st.title("⚖️ Peer Comparison")
 st.caption("Compare a ticker against its sector peers — relative strength, signals, and performance.")
 st.divider()

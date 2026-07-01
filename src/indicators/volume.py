@@ -1,23 +1,3 @@
-"""Volume analysis indicator.
-
-Uses two complementary sub-signals and combines them:
-
-1. **Volume Ratio** — current volume vs 20-day MA.
-   High volume confirms price moves; low volume casts doubt on them.
-
-2. **OBV Trend** — On Balance Volume 10-day vs 30-day slope.
-   Rising OBV = accumulation (smart money buying).
-   Falling OBV = distribution (smart money selling).
-
-Signal logic
-------------
-High volume + price UP + OBV rising   → STRONG_BUY
-High volume + price UP                → BUY
-Low volume or OBV flat                → NEUTRAL
-High volume + price DOWN              → SELL
-High volume + price DOWN + OBV falling → STRONG_SELL
-"""
-
 from __future__ import annotations
 
 import numpy as np
@@ -25,6 +5,18 @@ import pandas as pd
 
 from src.indicators._calc import obv as _obv, volume_ratio as _vol_ratio
 from src.indicators.base import Indicator, IndicatorResult, Signal
+
+"""
+Purpose: Volume analysis indicator — volume ratio vs 20-day MA combined with OBV trend direction.
+
+Connections:
+  - src/indicators/_calc.py: obv(), volume_ratio() math functions
+  - src/indicators/base.py: Indicator ABC, IndicatorResult, Signal types
+  - src/indicators/signal_aggregator.py: called with weight 1.0
+
+In:  daily OHLCV pd.DataFrame (needs Close/Volume, min ~35 rows)
+Out: IndicatorResult with Signal enum and volume ratio / OBV slope values
+"""
 
 _HIGH_VOL_THRESHOLD = 1.5   # volume 50% above 20-day MA
 _LOW_VOL_THRESHOLD = 0.7    # volume 30% below 20-day MA

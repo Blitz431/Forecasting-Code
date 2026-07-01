@@ -1,27 +1,3 @@
-"""SHAP-based and correlation-based feature selection for Phase 4 ML Engine.
-
-Feature selection reduces overfitting and speeds up training by keeping only
-the most informative features.
-
-Two filtering steps (applied in order):
-  1. Correlation filter — remove features that are highly correlated with
-     another feature (|r| > threshold), keeping the one with higher variance.
-  2. SHAP importance filter — rank remaining features by mean |SHAP value|
-     and keep the top-k most predictive.
-
-Public API
-----------
-correlation_filter(X, threshold) -> list[int]
-    Return column indices to keep after removing near-duplicate features.
-
-shap_importance(model, X, feature_names) -> pd.Series
-    Compute mean |SHAP value| for each feature. Requires a trained tree model.
-
-select_features(X_train, y_train, model, feature_names, top_k, corr_threshold)
-    -> (X_selected, selected_names)
-    Combined pipeline: train a fast surrogate (XGBoost), run SHAP, filter.
-"""
-
 from __future__ import annotations
 
 import warnings
@@ -32,6 +8,17 @@ import pandas as pd
 from src.utils.logging import setup_logger
 
 logger = setup_logger(__name__)
+
+"""
+Purpose: SHAP-based + correlation feature selection — removes redundant features to reduce overfitting in Phase 4.
+
+Connections:
+  - src/ml/runner.py: calls select_features() when feature_select=True in run_ticker()
+  - src/ml/xgboost_model.py: fast XGBoost surrogate trained internally to generate SHAP values
+
+In:  (X_train, y_train) numpy arrays + feature names list
+Out: (X_selected, selected_names) — reduced feature matrix keeping top-k SHAP-important, low-correlation features
+"""
 
 
 # ------------------------------------------------------------------ #

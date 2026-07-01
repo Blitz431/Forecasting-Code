@@ -1,35 +1,21 @@
-"""Fundamentals indicator — P/S ratio and ATR-based Risk/Reward.
-
-Two sub-signals:
-
-1. **P/S Ratio** (Price-to-Sales) via yfinance.
-   Compares current P/S to a rough sector-neutral reference scale.
-   Low P/S = potentially undervalued.
-
-2. **Risk/Reward** via ATR.
-   Estimates upside (distance to upper Bollinger Band) vs downside (ATR × 2)
-   as a simple ratio.  R/R > 2 = favourable.
-
-These are deliberately lightweight — full fundamental analysis belongs in a
-dedicated screener.  They serve as tiebreakers in the composite signal.
-
-Signal logic (P/S)
-------------------
-P/S < 2      → STRONG_BUY
-P/S < 4      → BUY
-4 ≤ P/S ≤ 8  → NEUTRAL
-P/S > 8      → SELL
-P/S > 15     → STRONG_SELL
-
-If P/S is unavailable (no revenue data / ETF), falls back to R/R only.
-"""
-
 from __future__ import annotations
 
 import pandas as pd
 
 from src.indicators._calc import atr, bollinger_bands
 from src.indicators.base import Indicator, IndicatorResult, Signal
+
+"""
+Purpose: Fundamentals indicator — P/S ratio (yfinance) and ATR-based Risk/Reward as lightweight tiebreakers.
+
+Connections:
+  - src/indicators/_calc.py: atr(), bollinger_bands() math functions
+  - src/indicators/base.py: Indicator ABC, IndicatorResult, Signal types
+  - src/indicators/signal_aggregator.py: called with weight 0.75 (lowest weight)
+
+In:  daily OHLCV pd.DataFrame + yfinance API call for P/S ratio
+Out: IndicatorResult with Signal enum and P/S value / R/R ratio
+"""
 
 
 def _get_ps_ratio(ticker: str) -> float | None:
