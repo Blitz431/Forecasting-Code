@@ -1,10 +1,3 @@
-"""RSI indicator (Method: Wilder's exponential smoothing).
-
-Thresholds from settings:
-  rsi_overbought = 70  → SELL / STRONG_SELL
-  rsi_oversold   = 30  → BUY  / STRONG_BUY
-"""
-
 from __future__ import annotations
 
 import pandas as pd
@@ -12,6 +5,19 @@ import pandas as pd
 from config.settings import get_settings
 from src.indicators._calc import rsi as _rsi
 from src.indicators.base import Indicator, IndicatorResult, Signal
+
+"""
+Purpose: RSI indicator — Wilder's 14-period Relative Strength Index, signals overbought/oversold.
+
+Connections:
+  - src/indicators/_calc.py: rsi() math function
+  - src/indicators/base.py: Indicator ABC, IndicatorResult, Signal types
+  - config/settings.py: rsi_overbought (70), rsi_oversold (30) thresholds
+  - src/indicators/signal_aggregator.py: called with weight 1.5
+
+In:  daily OHLCV pd.DataFrame (needs Close column, min ~30 rows)
+Out: IndicatorResult with Signal enum and RSI value
+"""
 
 
 class RSIIndicator(Indicator):

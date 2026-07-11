@@ -1,36 +1,3 @@
-"""Phase 7: Implied Volatility vs Historical Volatility comparison.
-
-Computes two volatility measures for each ticker and compares them:
-
-  implied_vol (IV)
-    The market's forward-looking volatility expectation, extracted from the
-    at-the-money (ATM) options contracts across all expiries via yfinance.
-    We use the median IV of near-ATM contracts (within 5% of spot) to reduce
-    the skew from deep OTM contracts.
-
-  historical_vol (HV)
-    30-trading-day realised volatility computed from daily log returns stored
-    in data/raw/daily/{ticker}.parquet (Phase 1 data).
-
-  iv_hv_spread
-    IV minus HV (percentage points). A large positive spread means the market
-    is pricing in more uncertainty than recent history suggests — often
-    precedes earnings or macro events.
-
-  vol_signal
-    [-1, 1] float. Negative when IV >> HV (high uncertainty, risk-off for
-    this stock); near zero when IV ≈ HV (normal); positive when IV < HV
-    (options market calmer than recent price action — contrarian entry signal).
-
-    Formula: clipped tanh(-iv_hv_spread / 0.15)
-    — spread of +15pp maps to signal ≈ -0.76 (bearish)
-    — spread of -15pp maps to signal ≈ +0.76 (bullish)
-
-Storage: data/options/iv/{ticker}.parquet
-Columns: implied_vol, historical_vol, iv_hv_spread, vol_signal, spot_price
-Index:   DatetimeIndex (fetch date, UTC)
-"""
-
 from __future__ import annotations
 
 import math
@@ -47,6 +14,18 @@ from src.scraper.storage import upsert_dataframe, load_dataframe
 from src.utils.logging import setup_logger
 
 logger = setup_logger(__name__)
+
+"""
+Purpose: Compute IV vs HV spread for each ticker and produce a vol signal for the ranker.
+
+Connections:
+  - src/scraper/storage.py: load_dataframe() reads daily prices; upsert_dataframe() saves results
+  - config/settings.py: options_iv_spike_threshold, options_lookback_days, options_dir
+  - src/ranking/ranker.py: calls get_vol_signal() with weight 0.5
+
+In:  data/raw/daily/{ticker}.parquet (for HV); yfinance options chain (for ATM IV)
+Out: data/options/iv/{ticker}.parquet (implied_vol, historical_vol, iv_hv_spread, vol_signal)
+"""
 
 # ATM band: include contracts whose strike is within this fraction of spot
 _ATM_BAND = 0.05  # 5%

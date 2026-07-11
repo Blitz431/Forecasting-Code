@@ -1,21 +1,3 @@
-"""Position sizing and risk limit enforcement.
-
-Rules
------
-- Max 5% of portfolio value per single stock (configurable).
-- In Bear or High-Volatility regime, scale max position to 2.5% (50% of normal).
-- Optional Kelly Criterion sizing: size ∝ edge / odds.
-- Hard stop: reject any order that would push a position over the limit.
-
-Usage
------
-    from src.trading.risk import RiskManager
-
-    rm = RiskManager(settings)
-    shares = rm.position_size(ticker="AAPL", portfolio_value=100_000, current_price=180.0)
-    ok, reason = rm.check_order(ticker="AAPL", qty=10, current_price=180.0, portfolio_value=100_000)
-"""
-
 from __future__ import annotations
 
 import math
@@ -24,6 +6,19 @@ from dataclasses import dataclass
 from src.utils.logging import setup_logger
 
 logger = setup_logger(__name__)
+
+"""
+Purpose: Position sizing and risk limit enforcement — max % per stock, regime scaling, optional Kelly Criterion.
+
+Connections:
+  - src/analytics/market_regime.py: reads current regime to halve position sizes in Bear/High-Vol
+  - src/analytics/correlation.py: receives highly_correlated pairs to further reduce correlated positions
+  - config/settings.py: max_position_pct, kelly_criterion_enabled, bear_regime_position_scale
+  - cli/trade.py and src/trading/backtester.py: calls position_size() and check_order() before every trade
+
+In:  ticker, portfolio_value, current_price, current_regime
+Out: SizingResult (ticker, shares, dollar_amount); check_order() returns (bool ok, reason str)
+"""
 
 
 @dataclass

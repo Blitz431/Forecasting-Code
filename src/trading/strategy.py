@@ -1,35 +1,3 @@
-"""Entry / exit rules for the main momentum strategy.
-
-Rules
------
-Entry
-  - Buy stocks that rank in the top-N from ``ranking/ranker.py`` and are not
-    already held and pass risk checks.
-
-Trailing stop
-  - Once a position has been profitable for 3 *consecutive* days, activate a
-    5% trailing stop (configurable via settings).
-  - The stop price is ``peak_price * (1 - trailing_stop_pct/100)``.
-  - If current price falls below stop price, exit.
-
-Signal flip exit
-  - If the ranker composite score flips to SELL (< -0.2), exit the position.
-
-State
------
-Position metadata (peak price, consecutive profitable days, entry info) is
-held in memory during a session.  The caller (trade.py CLI) is responsible for
-reloading it at each run.
-
-Usage
------
-    from src.trading.strategy import MomentumStrategy
-
-    strat = MomentumStrategy(settings)
-    buys  = strat.generate_entries(top_picks, current_positions, portfolio_value)
-    exits = strat.generate_exits(current_positions, current_prices, ranker_scores)
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -42,7 +10,44 @@ from src.utils.logging import setup_logger
 
 logger = setup_logger(__name__)
 
+"""
+Purpose: Momentum strategy entry/exit rules — buy top-ranked stocks, exit on trailing stop or composite score flip.
+
+Connections:
+  - src/ranking/ranker.py: generate_entries() receives top_picks list; generate_exits() reads ranker_scores
+  - src/trading/risk.py: called to validate position size before generating BUY signals
+  - config/settings.py: trailing_stop_pct, trailing_stop_days, SELL_THRESHOLD
+  - src/trading/multi_strategy.py: MomentumStrategy is one of the three managed strategies
+
+In:  top_picks list (RankEntry), current_positions dict, current_prices dict
+Out: list[TradeSignal] with BUY/SELL actions and reasons
+"""
+
 SELL_THRESHOLD = -0.2   # composite score below this → SELL signal
+
+_SHORT_HORIZON = {"options_flow", "iv_signal", "earnings_signal", "forecast_signal", "news_sentiment"}
+_LONG_HORIZON  = {"insider_signal", "congress_signal", "short_interest"}
+
+
+def derive_horizon_days(rank_entry) -> int:
+    """Return holding horizon in days derived from the dominant signal sources.
+
+    Inspect the top-3 signals by absolute value:
+      ≥ 2 short-horizon sources (options/IV/earnings/forecast/news) → 14 days
+      ≥ 2 long-horizon sources  (insider/congress/short interest)   → 60 days
+      otherwise                                                      → 30 days
+    """
+    signals: dict = getattr(rank_entry, "signals", {}) or {}
+    if not signals:
+        return 30
+    top3 = sorted(signals.items(), key=lambda kv: abs(kv[1]), reverse=True)[:3]
+    short_count = sum(1 for k, _ in top3 if k in _SHORT_HORIZON)
+    long_count  = sum(1 for k, _ in top3 if k in _LONG_HORIZON)
+    if short_count >= 2:
+        return 14
+    if long_count >= 2:
+        return 60
+    return 30
 
 
 # ---------------------------------------------------------------------------#
@@ -59,6 +64,10 @@ class PositionState:
     trailing_stop_price: float = 0.0
     profitable_days_streak: int = 0
     last_checked_date: str = ""
+    holding_horizon_days: int = 30
+    broker_trail_pct: float = 5.0   # current broker trail %; flips to tight after horizon
+    tighten_mode: str = "auto"      # "auto" | "on_date" | "manual"
+    tighten_on_date: str = ""       # ISO date (YYYY-MM-DD); used when tighten_mode == "on_date"
 
     def update_peak(self, current_price: float) -> None:
         if current_price > self.peak_price:

@@ -1,8 +1,3 @@
-"""Dividend data scraper using yfinance.
-
-Fetches dividend history, ex-dividend dates, and current yield.
-"""
-
 from pathlib import Path
 
 import pandas as pd
@@ -13,6 +8,19 @@ from src.scraper.storage import get_ticker_filepath, upsert_dataframe
 from src.utils.logging import setup_logger
 
 logger = setup_logger(__name__)
+
+"""
+Purpose: Fetch dividend history and current yield from yfinance and store per-ticker parquets.
+
+Connections:
+  - src/scraper/storage.py: upsert_dataframe(), get_ticker_filepath()
+  - config/settings.py: backfill start year, raw_dividends_dir
+  - cli/scrape.py: calls scrape_dividends()
+  - src/ml/feature_engineer.py: reads dividends parquets as ML features (yield, ex-date proximity)
+
+In:  list of ticker symbols
+Out: data/raw/dividends/{ticker}.parquet (Dividends column indexed by ex-dividend date)
+"""
 
 
 def download_dividends(ticker: str, start: str | None = None) -> pd.DataFrame:

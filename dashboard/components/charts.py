@@ -1,28 +1,3 @@
-"""Shared Plotly chart builders used across all dashboard pages.
-
-Each function accepts a DataFrame (and optional parameters) and returns a
-``plotly.graph_objects.Figure``.  All charts share a consistent dark theme
-so every page looks coherent.
-
-Available builders
-------------------
-candlestick(df, ticker)              — OHLCV candlestick with volume subplot
-price_line(df, ticker)               — Simple close-price line chart
-forecast_overlay(df, results, ticker)— Price history + all 12 method forecasts
-signal_heatmap(indicator_results)    — Heatmap of indicator signals per ticker
-ranking_bar(entries_df)              — Horizontal bar chart of composite scores
-score_breakdown(entry)               — Stacked bar decomposing one ticker's signals
-sentiment_timeline(df)               — Sentiment score over time
-options_chart(df, ticker)            — Put/call ratio timeline + unusual activity
-vol_chart(df, ticker)                — IV vs historical vol
-correlation_matrix(corr_df)          — Heatmap of a correlation matrix
-sector_donut(sector_series)          — Donut chart of sector weights
-ml_comparison_bar(results_df)        — Model RMSE comparison bar chart
-feature_importance(feat_df)          — Horizontal bar chart of top features
-regime_gauge(regime_label, vix)      — Market regime gauge
-earnings_timeline(df)                — Upcoming earnings calendar scatter
-"""
-
 from __future__ import annotations
 
 import numpy as np
@@ -30,6 +5,17 @@ import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
+
+"""
+Purpose: Shared Plotly figure builders — candlestick, forecast overlay, signal heatmap, ranking bars, sentiment timeline, vol chart, regime gauge, and more.
+
+Connections:
+  - dashboard/pages/*: imported by every dashboard page that shows a chart
+  - dashboard/components/tables.py: shares colour palette (_GREEN, _RED, _BLUE)
+
+In:  pandas DataFrame (price, signal, sentiment, ML results, etc.)
+Out: plotly.graph_objects.Figure ready for st.plotly_chart()
+"""
 
 # ---------------------------------------------------------------------------#
 # Theme defaults

@@ -21,6 +21,10 @@ from config.settings import get_settings
 from dashboard.components.tables import style_generic
 
 st.set_page_config(page_title="Trading", page_icon="🔧", layout="wide")
+
+from dashboard.components.market_clock import render_market_clock
+render_market_clock()
+
 st.title("🔧 Trading Controls")
 st.caption("Paper and live trading via Alpaca — account status, circuit breaker, multi-strategy management.")
 st.divider()
@@ -316,15 +320,19 @@ st.caption("Preview what the trading loop would do right now without placing any
 if st.button("▶ Run Signal Preview (dry-run)"):
     with st.spinner("Generating signals …"):
         try:
-            from src.ranking.ranker import top_picks as get_top_picks
+            from src.ranking.ranker import load_ranking_cache, top_picks as get_top_picks
             from src.utils.tickers import get_tickers
             from src.trading.multi_strategy import MultiStrategyManager
             from src.trading.risk import RiskManager
 
             tickers = get_tickers(settings.ticker_source)
-            picks = get_top_picks(n=settings.top_n_picks, settings=settings,
-                                  include_ml=False, include_indicators=True,
-                                  tickers=tickers)
+            cached = load_ranking_cache(settings)
+            if cached:
+                picks = cached[:settings.top_n_picks]
+            else:
+                picks = get_top_picks(n=settings.top_n_picks, settings=settings,
+                                      include_ml=False, include_indicators=True,
+                                      tickers=tickers)
             held = {p.ticker for p in positions}
             pv = account.portfolio_value if account else 100_000.0
 
@@ -469,3 +477,151 @@ else:
                      labels={"portfolio_value": "Value ($)", "date": "Date"})
     fig_eq.update_layout(template="plotly_dark", height=350)
     st.plotly_chart(fig_eq, use_container_width=True)
+
+st.divider()
+
+# ---------------------------------------------------------------------------#
+# Manual order placement (with optional broker trailing stop)
+# ---------------------------------------------------------------------------#
+
+import json as _json
+from datetime import date as _date, timedelta as _td
+from pathlib import Path as _Path
+
+_STATES_FILE = _Path(__file__).parent.parent.parent / "data" / "strategy_states.json"
+
+
+def _load_states_17() -> dict:
+    if _STATES_FILE.exists():
+        try:
+            return _json.loads(_STATES_FILE.read_text())
+        except Exception:
+            pass
+    return {}
+
+
+def _save_states_17(states: dict) -> None:
+    _STATES_FILE.parent.mkdir(parents=True, exist_ok=True)
+    _STATES_FILE.write_text(_json.dumps(states, indent=2))
+
+
+st.subheader("📝 Place Manual Order")
+st.caption(
+    "Buy a stock directly from this page — the system will also attach a broker "
+    "trailing stop and record the position so Exit Calendar can track it."
+)
+
+with st.form("manual_order_form"):
+    mo_c1, mo_c2, mo_c3 = st.columns(3)
+    with mo_c1:
+        mo_ticker = st.text_input("Ticker", placeholder="e.g. AAPL").strip().upper()
+    with mo_c2:
+        mo_shares = st.number_input("Shares", min_value=0.01, value=1.0, step=0.01)
+    with mo_c3:
+        mo_attach_trail = st.checkbox("Attach trailing stop", value=True,
+                                      help="Places a GTC trailing-stop sell order on Alpaca automatically.")
+
+    st.markdown("**Trailing-stop tighten settings**")
+    tm_c1, tm_c2 = st.columns(2)
+    with tm_c1:
+        mo_tighten_mode = st.selectbox(
+            "When to tighten trail from 5% → 1%",
+            options=["auto", "on_date", "manual"],
+            format_func=lambda x: {
+                "auto":    "Auto — after holding horizon expires",
+                "on_date": "On a specific date I choose",
+                "manual":  "Manual — I'll tighten it myself",
+            }[x],
+        )
+    with tm_c2:
+        mo_horizon = st.number_input(
+            "Holding horizon (days) — used by Auto mode",
+            min_value=1, max_value=365, value=30,
+            help="Sets how many days before the trail auto-tightens in 'Auto' mode.",
+        )
+
+    mo_tighten_date = None
+    if mo_tighten_mode == "on_date":
+        mo_tighten_date = st.date_input(
+            "Exact tighten date",
+            value=_date.today() + _td(days=30),
+            min_value=_date.today(),
+        )
+
+    mo_submitted = st.form_submit_button("Place Buy Order", type="primary")
+
+if mo_submitted:
+    if not mo_ticker:
+        st.error("Please enter a ticker symbol.")
+    elif not settings.alpaca.api_key:
+        st.error("Alpaca API key not configured in .env.")
+    else:
+        with st.spinner(f"Placing BUY {mo_shares} × {mo_ticker} …"):
+            try:
+                from src.trading.alpaca_client import AlpacaClient
+                from src.trading.strategy import PositionState
+
+                client = AlpacaClient(settings)
+                order = client.place_order(mo_ticker, mo_shares, "buy")
+
+                if order is None:
+                    st.error(f"Order placement failed for {mo_ticker}. Check logs.")
+                else:
+                    st.success(
+                        f"✅ BUY order placed: {mo_shares} × **{mo_ticker}**  "
+                        f"(order ID: `{order.order_id}`)"
+                    )
+
+                    # Optionally attach broker trailing stop
+                    if mo_attach_trail:
+                        # Alpaca rejects the trailing-stop SELL while the BUY is still
+                        # open, so wait briefly for the fill first.
+                        if client.wait_for_fill(order.order_id, timeout=10.0):
+                            ts = client.place_trailing_stop(
+                                mo_ticker, mo_shares,
+                                trail_percent=settings.broker_trailing_stop_pct,
+                            )
+                            if ts:
+                                st.success(
+                                    f"✅ Trailing stop attached: {settings.broker_trailing_stop_pct}% GTC "
+                                    f"(order ID: `{ts.order_id}`)"
+                                )
+                            else:
+                                st.warning(
+                                    "⚠️ Trailing stop could not be placed — the background "
+                                    "reconciliation sweep will retry within 5 minutes."
+                                )
+                        else:
+                            st.info(
+                                "⏳ Buy not filled yet (queued/after-hours) — the background "
+                                "reconciliation sweep will attach the trailing stop once it fills."
+                            )
+
+                    # Write position state so Exit Calendar tracks it
+                    tighten_date_str = mo_tighten_date.isoformat() if mo_tighten_date else ""
+                    states = _load_states_17()
+                    states[mo_ticker] = {
+                        "ticker":               mo_ticker,
+                        "entry_price":          0.0,   # filled on next cycle
+                        "entry_date":           _date.today().isoformat(),
+                        "peak_price":           0.0,
+                        "trailing_stop_active": False,
+                        "trailing_stop_price":  0.0,
+                        "profitable_days_streak": 0,
+                        "last_checked_date":    "",
+                        "holding_horizon_days": int(mo_horizon),
+                        "broker_trail_pct":     settings.broker_trailing_stop_pct if mo_attach_trail else 0.0,
+                        "tighten_mode":         mo_tighten_mode,
+                        "tighten_on_date":      tighten_date_str,
+                    }
+                    _save_states_17(states)
+                    st.info(
+                        f"Position state saved — Exit Calendar will track **{mo_ticker}** "
+                        f"(horizon: {mo_horizon}d, mode: {mo_tighten_mode}"
+                        + (f", tighten on: {tighten_date_str}" if tighten_date_str else "")
+                        + ")."
+                    )
+                    st.cache_data.clear()
+
+            except Exception as _e:
+                st.error(f"Error: {_e}")

@@ -1,23 +1,20 @@
-"""Sector rotation detection, allocation breakdown, and concentration warnings.
-
-Uses yfinance ticker.info to get sector for each holding.  Results are cached
-to avoid hammering the API on every dashboard refresh.
-
-Usage
------
-    from src.analytics.sector_analysis import SectorAnalyzer
-
-    analyzer = SectorAnalyzer(settings)
-    weights  = analyzer.sector_weights({"AAPL": 10000, "JPM": 5000, "XOM": 3000})
-    rotation = analyzer.detect_rotation(lookback_days=63)
-    warnings = analyzer.concentration_warnings(weights)
-"""
-
 from __future__ import annotations
 
 import json
 from pathlib import Path
 from dataclasses import dataclass
+
+"""
+Purpose: Sector rotation detection and concentration warnings — identifies over-weight sectors across current holdings.
+
+Connections:
+  - src/analytics/peer_comparison.py: imports _STATIC_SECTORS for peer mapping
+  - config/settings.py: raw_daily_dir for sector return calculations
+  - dashboard: called to show sector allocation breakdown
+
+In:  dict of {ticker: market_value} holdings; reads yfinance .info for sector tags (cached)
+Out: sector_weights dict, rotation signals, concentration warning list
+"""
 
 import numpy as np
 import pandas as pd

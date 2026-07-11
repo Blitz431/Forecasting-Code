@@ -1,19 +1,3 @@
-"""Signal aggregator — combines all indicator results into a composite score.
-
-Aggregation method
-------------------
-1. Each indicator has a ``weight`` (default 1.0, higher = more influence).
-2. Composite score = weighted average of signal values (−2 to +2).
-3. Final signal is derived by rounding to the nearest Signal enum value.
-4. A normalised score on [−1, +1] is also reported for dashboards.
-
-Public API
-----------
-run_all_indicators(df, ticker)  -> list[IndicatorResult]
-aggregate(results)              -> AggregateResult
-run_and_aggregate(df, ticker)   -> AggregateResult
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -35,6 +19,19 @@ from src.utils.logging import setup_logger
 
 logger = setup_logger(__name__)
 
+"""
+Purpose: Combine all 9 indicator results into a weighted composite signal score for a ticker.
+
+Connections:
+  - src/indicators/rsi.py, macd.py, moving_averages.py, bollinger.py, stochastic.py,
+    volume.py, momentum.py, fundamentals.py, correlation.py: instantiates and runs each
+  - src/indicators/base.py: Indicator, IndicatorResult, Signal types
+  - cli/indicators.py: calls run_and_aggregate() for each ticker
+  - src/ranking/ranker.py: reads indicator parquets (score, signal) as one ranking signal
+
+In:  daily OHLCV pd.DataFrame + ticker string
+Out: AggregateResult (composite signal -2..+2, normalized score -1..+1, per-indicator breakdown)
+"""
 
 # Weights mirror indicator.weight properties but are listed here for clarity
 _DEFAULT_WEIGHTS = {

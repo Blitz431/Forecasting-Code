@@ -1,30 +1,3 @@
-"""Append-only trade audit log.
-
-Every entry and exit is recorded with:
-  - timestamp, ticker, side (BUY/SELL), price, shares
-  - which signals triggered the trade
-  - holding period (days) on exit
-  - realized P&L on exit
-  - strategy name
-
-Writes to ``data/trade_journal/journal.parquet`` (upserted by trade_id so
-re-running a day is safe).
-
-Usage
------
-    from src.trading.trade_journal import TradeJournal
-
-    journal = TradeJournal(settings)
-    journal.log_entry("AAPL", price=180.0, shares=5,
-                      signals={"indicator_score": 0.8, "ml_signal": 0.6},
-                      strategy="momentum")
-    journal.log_exit("AAPL", price=192.0, shares=5,
-                     entry_price=180.0, entry_date="2025-01-10",
-                     signals={"indicator_score": -0.4}, strategy="momentum",
-                     exit_reason="trailing_stop")
-    df = journal.load()
-"""
-
 from __future__ import annotations
 
 import json
@@ -38,6 +11,18 @@ import pandas as pd
 from src.utils.logging import setup_logger
 
 logger = setup_logger(__name__)
+
+"""
+Purpose: Append-only trade audit log — records every entry/exit with signals that triggered it, P&L, and exit reason.
+
+Connections:
+  - cli/trade.py and src/trading/backtester.py: calls log_entry() and log_exit() on every order
+  - src/reports/morning_report.py: calls load() to display recent trades and win rate
+  - config/settings.py: trade_journal_dir
+
+In:  trade metadata (ticker, price, shares, signals dict, strategy, exit_reason)
+Out: data/trade_journal/journal.parquet (upserted by trade_id — safe to re-run)
+"""
 
 
 # ---------------------------------------------------------------------------#

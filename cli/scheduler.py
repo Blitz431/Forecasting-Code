@@ -1,33 +1,3 @@
-"""Daily cycle automation runner.
-
-Usage
------
-    python cli/scheduler.py --start
-        Enter the APScheduler loop and block until Ctrl-C.
-
-    python cli/scheduler.py --run-now
-        Execute the full pipeline immediately, ignoring the clock.
-        Useful for manual testing without waiting for scheduled times.
-
-    python cli/scheduler.py --status
-        Print the next scheduled run time for each job.
-
-Pipeline (all times UTC)
-------------------------
-    06:00  Step 1 — Incremental scrape     cli/scrape.py
-    06:15  Step 2 — Indicators             cli/indicators.py --all
-    06:30  Step 3 — Forecasts + ML + News  cli/forecast.py --all
-                                           cli/ml.py --all --predict
-                                           cli/news.py --premarket
-    07:00  Step 4 — Morning report         cli/report.py --morning
-                  + Alert dispatch         cli/report.py --alerts
-    16:00  Step 5 — EOD snapshot           cli/trade.py --mode paper --dry-run
-
-Each step runs as a subprocess.  A failure in one step does NOT abort the rest.
-All stdout/stderr is streamed to the terminal and appended to
-data/logs/scheduler_YYYY-MM-DD.log.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -39,6 +9,20 @@ from pathlib import Path
 # Project root so subprocess commands resolve regardless of working directory
 ROOT = Path(__file__).parent.parent
 LOG_DIR = ROOT / "data" / "logs"
+
+"""
+Purpose: Daily automation loop — APScheduler cron jobs that run the full pipeline (scrape → indicators → forecast/ML/news → report → EOD snapshot).
+
+Connections:
+  - cli/scrape.py: job_scrape() at 06:00 UTC
+  - cli/indicators.py: job_indicators() at 06:15 UTC
+  - cli/forecast.py, cli/ml.py, cli/news.py: job_analysis() at 06:30 UTC
+  - cli/report.py: job_report() at 07:00 UTC (morning report + alerts)
+  - cli/trade.py: job_eod() at 16:00 UTC (EOD snapshot)
+
+In:  system clock (APScheduler triggers); no data inputs directly
+Out: data/logs/scheduler_YYYY-MM-DD.log; launches all pipeline subprocesses
+"""
 
 
 # ---------------------------------------------------------------------------#
@@ -160,6 +144,43 @@ def job_report() -> None:
     )
 
 
+def job_reconcile_stops() -> None:
+    """Every 5 minutes — ensure every held Alpaca position has an active trailing stop.
+
+    Does not place any new buy/sell trades; only manages stops on positions already held.
+    """
+    log = _daily_log_path()
+    _log("=== JOB: reconcile-stops ===", log)
+    try:
+        sys.path.insert(0, str(ROOT))
+        from config.settings import get_settings
+        from src.trading.alpaca_client import AlpacaClient
+        from src.trading.stop_manager import reconcile_trailing_stops
+
+        settings = get_settings()
+        client = AlpacaClient(settings)
+        if not client.connected:
+            _log("reconcile-stops: Alpaca not connected — skipping", log)
+            return
+        attached = reconcile_trailing_stops(client, settings)
+        _log(f"reconcile-stops: attached {len(attached)} new stop(s): {attached}", log)
+    except Exception as exc:
+        _log(f"!!! ERROR  reconcile-stops: {exc}", log)
+
+
+def job_live_quotes() -> None:
+    """Every 5 minutes — refresh live Alpaca quotes for held + watchlisted tickers."""
+    log = _daily_log_path()
+    _log("=== JOB: live-quotes ===", log)
+    try:
+        sys.path.insert(0, str(ROOT))
+        from src.scraper.live_quotes import refresh_quote_cache
+        quotes = refresh_quote_cache()
+        _log(f"live-quotes: refreshed {len(quotes)} tickers", log)
+    except Exception as exc:
+        _log(f"!!! ERROR  live-quotes: {exc}", log)
+
+
 def job_eod() -> None:
     """4:00 PM — EOD portfolio snapshot.
 
@@ -187,6 +208,12 @@ _JOB_REGISTRY: list[tuple[str, dict, object]] = [
     ("eod",        {"hour": 16, "minute": 0},  job_eod),
 ]
 
+# Interval-based jobs (run continuously on a fixed cadence, not at a daily clock time)
+_INTERVAL_JOB_REGISTRY: list[tuple[str, dict, object]] = [
+    ("live-quotes", {"minutes": 5}, job_live_quotes),
+    ("reconcile-stops", {"minutes": 5}, job_reconcile_stops),
+]
+
 
 # ---------------------------------------------------------------------------#
 # Sub-commands
@@ -196,6 +223,7 @@ def cmd_start() -> None:
     """Enter the APScheduler blocking loop."""
     from apscheduler.schedulers.blocking import BlockingScheduler
     from apscheduler.triggers.cron import CronTrigger
+    from apscheduler.triggers.interval import IntervalTrigger
 
     scheduler = BlockingScheduler(timezone="UTC")
 
@@ -203,6 +231,11 @@ def cmd_start() -> None:
     for name, cron_kwargs, fn in _JOB_REGISTRY:
         scheduler.add_job(fn, CronTrigger(timezone="UTC", **cron_kwargs), id=name)
         print(f"  {name:<14} @ {cron_kwargs['hour']:02d}:{cron_kwargs['minute']:02d} UTC")
+
+    for name, interval_kwargs, fn in _INTERVAL_JOB_REGISTRY:
+        scheduler.add_job(fn, IntervalTrigger(**interval_kwargs), id=name)
+        mins = interval_kwargs.get("minutes", 0)
+        print(f"  {name:<14} every {mins} min")
 
     log = _daily_log_path()
     _log("[scheduler] APScheduler loop started", log)
@@ -245,7 +278,24 @@ def cmd_status() -> None:
         cron_str = f"{cron_kwargs['hour']:02d}:{cron_kwargs['minute']:02d}"
         next_str = next_fire.strftime("%Y-%m-%d %H:%M UTC") if next_fire else "N/A"
         print(f"  {name:<14}  {cron_str:<12}  {next_str}")
+    for name, interval_kwargs, _ in _INTERVAL_JOB_REGISTRY:
+        mins = interval_kwargs.get("minutes", 0)
+        print(f"  {name:<14}  every {mins} min   (only while --start is running)")
     print()
+
+
+def cmd_live_quotes_once() -> None:
+    """Run job_live_quotes() a single time, for manual testing."""
+    print("\n[scheduler] Running live-quotes refresh once...\n")
+    job_live_quotes()
+    print("\n[scheduler] Live-quotes refresh complete.")
+
+
+def cmd_reconcile_stops_once() -> None:
+    """Run job_reconcile_stops() a single time, for manual testing."""
+    print("\n[scheduler] Running trailing-stop reconciliation once...\n")
+    job_reconcile_stops()
+    print("\n[scheduler] Trailing-stop reconciliation complete.")
 
 
 # ---------------------------------------------------------------------------#
@@ -275,6 +325,18 @@ def main() -> None:
         action="store_true",
         help="Print next scheduled run time for each job",
     )
+    group.add_argument(
+        "--live-quotes-once",
+        action="store_true",
+        dest="live_quotes_once",
+        help="Run the live-quotes refresh job a single time (for testing)",
+    )
+    group.add_argument(
+        "--reconcile-stops-once",
+        action="store_true",
+        dest="reconcile_stops_once",
+        help="Run the trailing-stop reconciliation job a single time (for testing)",
+    )
 
     args = parser.parse_args()
 
@@ -284,6 +346,10 @@ def main() -> None:
         cmd_run_now()
     elif args.status:
         cmd_status()
+    elif args.live_quotes_once:
+        cmd_live_quotes_once()
+    elif args.reconcile_stops_once:
+        cmd_reconcile_stops_once()
 
 
 if __name__ == "__main__":

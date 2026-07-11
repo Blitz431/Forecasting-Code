@@ -1,15 +1,3 @@
-"""CLI entry point for Phase 5: News, Sentiment & Short Interest.
-
-Usage:
-    python cli/news.py                              # Run full pipeline for S&P 500
-    python cli/news.py --tickers AAPL,MSFT,NVDA     # Specific tickers
-    python cli/news.py --premarket                  # Pre-market run (all S&P 500)
-    python cli/news.py --sentiment-only             # Skip short interest
-    python cli/news.py --short-interest-only        # Skip news/sentiment
-    python cli/news.py --tickers AAPL --max 100     # Fetch up to 100 articles
-    python cli/news.py --tickers AAPL --show        # Print results to terminal
-"""
-
 import argparse
 import sys
 from pathlib import Path
@@ -22,6 +10,19 @@ from src.utils.logging import setup_logger
 from src.utils.tickers import get_tickers
 
 logger = setup_logger("cli.news")
+
+"""
+Purpose: Phase 5 CLI — scrape news headlines, score FinBERT sentiment, and fetch short interest per ticker.
+
+Connections:
+  - src/news/runner.py: run_news_pipeline(), run_sentiment_only(), run_short_interest_only()
+  - src/utils/tickers.py: get_tickers() for default S&P 500 list
+  - config/settings.py: ticker_source, news_articles_dir
+  - cli/scheduler.py: invoked as subprocess in job_analysis()
+
+In:  news feeds (RSS/web), Quiver Quant API (short interest)
+Out: data/news/articles/*.parquet, data/news/short_interest/*.parquet
+"""
 
 
 def _print_results(results: dict[str, dict]) -> None:

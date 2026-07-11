@@ -19,6 +19,10 @@ from dashboard.components.tables import style_ml_table, style_generic
 from dashboard.components.ticker_selector import render_ticker_sidebar
 
 st.set_page_config(page_title="ML Predictions", page_icon="🤖", layout="wide")
+
+from dashboard.components.market_clock import render_market_clock
+render_market_clock()
+
 st.title("🤖 ML Predictions")
 st.caption("Classical + deep-learning models, walk-forward CV, SHAP feature importance.")
 st.divider()
@@ -196,6 +200,39 @@ with st.expander("📊 Model comparison & accuracy detail", expanded=True):
     st.subheader("Model Results Table")
     st.dataframe(style_ml_table(ml_df[available_display] if available_display else ml_df),
                  use_container_width=True)
+
+with st.expander("📖 How the ML models work", expanded=False):
+    st.markdown("""
+### Machine Learning Models
+
+These models are trained on historical price, volume, technical indicators, macro data, and
+calendar features to predict the stock's **forward return** over 1, 5, or 20 trading days.
+All models are trained on data up to a cutoff date and evaluated on the unseen period after it.
+
+| Model | How it works | Best at |
+|---|---|---|
+| **XGBoost** | Builds hundreds of decision trees sequentially, each one correcting the errors of the previous. Uses GPU acceleration. | Tabular data with mixed feature types |
+| **LightGBM** | Similar to XGBoost but grows trees leaf-wise (faster, less memory). Handles large feature counts well. | Speed + large datasets |
+| **CatBoost** | Gradient boosting with *ordered boosting* — designed for time-series to avoid target leakage between folds. | Sequential/time-series data |
+| **Random Forest** | Builds many independent decision trees in parallel and averages their predictions. Less prone to overfitting than boosting. | Noisy data, baseline robustness |
+| **Ridge** | Linear regression with L2 regularisation — penalises large coefficients to prevent overfitting. | When relationships are mostly linear |
+| **Lasso** | Linear regression with L1 regularisation — automatically zeroes out weak features (built-in feature selection). | Sparse signal environments |
+| **ElasticNet** | Combines Ridge and Lasso penalties. Balances feature selection with stability. | When you want both effects |
+| **LSTM** | A recurrent neural network that maintains a memory of past time steps. Captures sequential patterns a tree model would miss. | Momentum and trend patterns |
+| **GRU** | Simplified version of LSTM with fewer parameters — trains faster, similar accuracy on shorter sequences. | Faster training, similar to LSTM |
+| **Transformer** | Uses self-attention to weigh the importance of every past time step against every other. State-of-the-art for sequences. | Long-range dependencies in price history |
+| **Stacking Ensemble** | Trains all base models using time-series cross-validation, then fits a Ridge meta-model on their out-of-fold predictions. | Best overall accuracy — reduces any single model's bias |
+
+### How the walk-forward evaluation works
+The data is split at a fixed date boundary (train → test). Models never see future data during
+training. Metrics (RMSE, MAE, MAPE) are computed only on the held-out test period, so they
+reflect real predictive accuracy — not in-sample fit.
+
+### What the metrics mean
+- **RMSE** — Root Mean Squared Error. Lower is better. Penalises large errors more than small ones.
+- **MAE** — Mean Absolute Error. Average absolute prediction error in return units.
+- **MAPE** — Mean Absolute Percentage Error. Same idea but as a percentage of the actual value.
+""")
 
 with st.expander("🔍 Feature importance (best model)", expanded=True):
     feat_df = pd.DataFrame()

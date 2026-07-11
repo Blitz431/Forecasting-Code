@@ -1,38 +1,3 @@
-"""Multi-strategy executor: value, momentum, and mean-reversion running simultaneously.
-
-Capital allocation
-------------------
-Each strategy is given a capital slice proportional to its rolling Sharpe ratio
-(last 12 weeks).  Allocation is rebalanced weekly (every Friday).
-
-Initial weights are equal (33.3% each) until at least 4 weeks of P&L history
-accumulates.
-
-Strategies
-----------
-Value
-  - Screens for low P/S ratio + high dividend yield + positive fundamental score.
-  - BUY signal when P/S < 2.0 and indicator fundamentals score > 0.3.
-  - Hold until fundamentals deteriorate or 5% trailing stop after 3 profitable days.
-
-Momentum
-  - Uses the top-ranked picks from ``ranking/ranker.py`` (composite score).
-  - Standard entry/exit via ``strategy.MomentumStrategy``.
-
-Mean-Reversion
-  - Scans for RSI < 30 (oversold) + Bollinger Band lower-band touch.
-  - Short holding window — exit when RSI recovers above 50 or +3% gain, whichever first.
-
-Usage
------
-    from src.trading.multi_strategy import MultiStrategyManager
-
-    mgr = MultiStrategyManager(settings)
-    signals = mgr.generate_all_signals(top_picks, positions, portfolio_value)
-    mgr.record_weekly_pnl(strategy_name, weekly_pnl)
-    weights  = mgr.capital_weights()
-"""
-
 from __future__ import annotations
 
 import json
@@ -48,6 +13,20 @@ from src.trading.strategy import TradeSignal
 from src.utils.logging import setup_logger
 
 logger = setup_logger(__name__)
+
+"""
+Purpose: Multi-strategy executor — runs value, momentum, and mean-reversion simultaneously with Sharpe-weighted capital allocation.
+
+Connections:
+  - src/trading/strategy.py: delegates momentum entries/exits to MomentumStrategy
+  - src/ranking/ranker.py: reads composite scores for momentum and value screens
+  - src/indicators/signal_aggregator.py: reads RSI/Bollinger signals for mean-reversion screen
+  - config/settings.py: capital allocation settings, trading rules
+  - cli/trade.py: instantiates MultiStrategyManager and calls generate_all_signals()
+
+In:  top_picks list, current positions, portfolio_value, weekly P&L history
+Out: list[TradeSignal] from all three strategies merged; capital_weights() dict for allocation display
+"""
 
 StrategyName = Literal["value", "momentum", "mean_reversion"]
 

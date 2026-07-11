@@ -1,23 +1,3 @@
-"""CLI entry point for the Long-Term Forecasting Engine (Phase 2).
-
-Usage examples
---------------
-# Run all 12 methods for a single ticker and print comparison table:
-    python cli/forecast.py --ticker AAPL
-
-# Run for multiple tickers and save results:
-    python cli/forecast.py --tickers AAPL,MSFT,GOOG --save
-
-# Run for all stored tickers:
-    python cli/forecast.py --all
-
-# Custom horizons / holdout:
-    python cli/forecast.py --ticker AAPL --horizons 8 --holdout 4
-
-# Show only AutoBest result:
-    python cli/forecast.py --ticker AAPL --best-only
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -41,6 +21,19 @@ from src.utils.logging import setup_logger
 from src.utils.tickers import get_tickers
 
 logger = setup_logger("cli.forecast")
+
+"""
+Purpose: Phase 2 CLI — run all 12 forecasting methods per ticker and display/save comparison tables.
+
+Connections:
+  - src/forecasting/runner.py: run_ticker(), best_result(), save_forecasts()
+  - src/scraper/storage.py: list_stored_tickers() for --all mode
+  - config/settings.py: forecast_horizons, holdout_periods, raw_quarterly_dir
+  - cli/scheduler.py: invoked as subprocess in job_analysis()
+
+In:  data/raw/quarterly/*.parquet (quarterly OHLCV)
+Out: data/forecasts/<TICKER>_forecasts.parquet (when --save); prints comparison table
+"""
 
 
 # ------------------------------------------------------------------ #

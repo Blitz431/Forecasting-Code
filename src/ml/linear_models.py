@@ -1,23 +1,20 @@
-"""Ridge, Lasso, and ElasticNet linear regression models for Phase 4 ML Engine.
-
-Linear models with L1/L2 regularisation serve as interpretable baselines and
-can outperform tree-based models when features are strongly collinear.
-
-All three use StandardScaler so features are on a common scale before fitting.
-
-Classes
--------
-RidgeModel      — L2-regularised OLS (alpha controls shrinkage)
-LassoModel      — L1-regularised OLS (sparse solution, automatic feature selection)
-ElasticNetModel — Combined L1+L2 (best of both; l1_ratio controls the mix)
-"""
-
 from __future__ import annotations
 
 import numpy as np
 
 from src.ml.base import MLModel
 from src.utils.logging import setup_logger
+
+"""
+Purpose: Ridge, Lasso, and ElasticNet linear regression models with StandardScaler — interpretable baselines for Phase 4.
+
+Connections:
+  - src/ml/base.py: subclasses MLModel, returns MLResult
+  - src/ml/runner.py: instantiated and trained via run_ticker()
+
+In:  (X_train, y_train) numpy arrays (scaled internally by StandardScaler)
+Out: MLResult with predictions, RMSE/MAE/MAPE, feature_importance (coefficients); .pkl saved to disk
+"""
 
 logger = setup_logger(__name__)
 

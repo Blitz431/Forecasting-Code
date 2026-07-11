@@ -1,22 +1,20 @@
-"""Moving-average forecast methods (Methods 6-7).
-
-Methods
--------
-6. Simple Moving Average (SMA) — unweighted average of the last *window*
-   quarters, projected flat as a constant forecast + seasonal adjustment.
-7. Weighted Moving Average (WMA) — linearly weighted average so the most
-   recent quarter contributes most, then same flat projection.
-
-Both methods handle seasonality by computing a simple seasonal index from
-the trailing history and reapplying it to the flat-forecast baseline.
-"""
-
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
 
 from src.forecasting.base import ForecastMethod
+
+"""
+Purpose: Moving-average forecast methods 6–7 (Simple MA, Weighted MA) with seasonal adjustment.
+
+Connections:
+  - src/forecasting/base.py: subclasses ForecastMethod, returns ForecastResult
+  - src/forecasting/runner.py: instantiated and called via ALL_METHODS list
+
+In:  quarterly price pd.Series
+Out: ForecastResult with flat+seasonal forecasts and holdout error metrics
+"""
 
 _SEASONAL_PERIOD = 4  # quarterly
 

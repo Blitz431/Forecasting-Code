@@ -1,17 +1,19 @@
-"""Low-level indicator math — pure pandas/numpy, no external TA library.
-
-These functions mirror the standard definitions used by Bloomberg, TradingView,
-and most quant textbooks.  They are intentionally dependency-free so that
-indicator modules can be imported even if optional packages are unavailable.
-
-All inputs are pandas Series with a DatetimeIndex.
-All outputs are pandas Series aligned to the same index.
-"""
-
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+
+"""
+Purpose: Pure pandas/numpy math library for all technical indicators — RSI, MACD, Bollinger, Stochastic, ATR, OBV, etc.
+
+Connections:
+  - src/indicators/rsi.py, macd.py, bollinger.py, stochastic.py, volume.py,
+    momentum.py, fundamentals.py, correlation.py: all import computation functions from here
+  - standalone — no project-internal imports beyond numpy/pandas
+
+In:  pd.Series or pd.DataFrame (daily OHLCV)
+Out: pd.Series of indicator values aligned to the input index
+"""
 
 
 # ------------------------------------------------------------------ #

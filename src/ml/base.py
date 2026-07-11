@@ -1,9 +1,3 @@
-"""Abstract base classes and data structures for the ML Forecasting Engine (Phase 4).
-
-All ML models implement MLModel so the runner can treat them uniformly.
-MLResult is the single return type from every model evaluation.
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -14,6 +8,19 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
+
+"""
+Purpose: Abstract base classes and data structures for all ML models — MLModel ABC, MLResult dataclass, HMAC file integrity.
+
+Connections:
+  - src/ml/xgboost_model.py, random_forest.py, linear_models.py, lstm_model.py,
+    transformer_model.py, catboost_model.py, ensemble_model.py: all subclass MLModel
+  - src/ml/runner.py: calls train(), predict(), save(), load() uniformly on any MLModel
+
+In:  X/y numpy arrays (feature matrix and target returns)
+Out: MLResult dataclass (predictions, actual, RMSE/MAE/MAPE, feature_importance, error)
+     Signed .pkl model files saved to disk with HMAC-SHA256 integrity check
+"""
 
 
 # ---------------------------------------------------------------------------

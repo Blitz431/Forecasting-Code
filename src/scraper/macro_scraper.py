@@ -1,8 +1,3 @@
-"""Macroeconomic data scraper using FRED API.
-
-Pulls series like GDP, Fed Funds Rate, CPI, VIX, etc.
-"""
-
 from datetime import date
 from pathlib import Path
 
@@ -13,6 +8,19 @@ from src.scraper.storage import get_latest_date, get_ticker_filepath, upsert_dat
 from src.utils.logging import setup_logger
 
 logger = setup_logger(__name__)
+
+"""
+Purpose: Pull FRED macroeconomic series (GDP, Fed Funds Rate, CPI, VIX, yield curve, etc.) and store them.
+
+Connections:
+  - src/scraper/storage.py: upsert_dataframe(), get_latest_date(), get_ticker_filepath()
+  - config/settings.py: FRED API key, series list, backfill start year, raw_macro_dir
+  - cli/scrape.py: calls scrape_macro()
+  - src/ml/feature_engineer.py: reads macro parquets as ML features
+
+In:  list of FRED series IDs (defaults to settings.fred_series: GDP, FEDFUNDS, CPI, VIX, etc.)
+Out: data/raw/macro/{series_id}.parquet (one file per series, DatetimeIndex)
+"""
 
 
 def _get_fred_client():

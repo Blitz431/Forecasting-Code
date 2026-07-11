@@ -51,7 +51,7 @@ def _abort(msg: str) -> None:
 def _banner(mode: str, account) -> None:
     mode_str = "LIVE TRADING" if mode == "live" else "PAPER TRADING"
     print("=" * 60)
-    print(f"  AutoStockAnalyzer — {mode_str}")
+    print(f"  AutoStockAnalyzer -- {mode_str}")
     print(f"  {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC")
     if account:
         print(f"  Portfolio: ${account.portfolio_value:,.2f}  "
@@ -150,6 +150,77 @@ def run(mode: str, dry_run: bool = False) -> None:
         held_tickers = {p.ticker for p in positions}
 
     # ------------------------------------------------------------------ #
+    # 4b. Load position states + time-based trailing-stop tighten
+    # ------------------------------------------------------------------ #
+    saved_states = _load_states()
+    today_date = date.today()
+    states_dirty = False
+    for _pos in positions:
+        _ticker = _pos.ticker
+        _sd = saved_states.get(_ticker)
+        if not _sd:
+            continue
+        _entry_str = _sd.get("entry_date", "")
+        _horizon   = _sd.get("holding_horizon_days", 30)
+        _cur_trail = _sd.get("broker_trail_pct", settings.broker_trailing_stop_pct)
+        if not _entry_str:
+            continue
+        try:
+            _days_held = (today_date - date.fromisoformat(_entry_str)).days
+        except ValueError:
+            continue
+        _mode = _sd.get("tighten_mode", "auto")
+        _should_tighten = False
+        if _cur_trail > settings.broker_trailing_stop_tight_pct:
+            if _mode == "auto":
+                _should_tighten = _days_held >= _horizon
+            elif _mode == "on_date":
+                _tighten_date_str = _sd.get("tighten_on_date", "")
+                try:
+                    _should_tighten = today_date >= date.fromisoformat(_tighten_date_str)
+                except (ValueError, TypeError):
+                    pass   # no valid date set yet — skip
+            # "manual" mode: never auto-tighten
+
+        if _should_tighten:
+            # Cancel existing broker trailing stop(s), replace with tighter one
+            for _o in client.list_open_orders(_ticker):
+                _otype = _o.order_type.value if hasattr(_o.order_type, "value") else str(_o.order_type)
+                _oside = _o.side.value if hasattr(_o.side, "value") else str(_o.side)
+                if _otype == "trailing_stop" and _oside == "sell":
+                    client.cancel_order(str(_o.id))
+            _ts = client.place_trailing_stop(
+                _ticker,
+                qty=_pos.qty,
+                trail_percent=settings.broker_trailing_stop_tight_pct,
+            )
+            if _ts is not None:
+                _sd["broker_trail_pct"] = settings.broker_trailing_stop_tight_pct
+                saved_states[_ticker] = _sd
+                states_dirty = True
+                logger.info(
+                    f"[TIGHTEN] {_ticker}: held {_days_held}d "
+                    f"(horizon {_horizon}d) → trail {_cur_trail}% → "
+                    f"{settings.broker_trailing_stop_tight_pct}%"
+                )
+                print(
+                    f"  [TIGHTEN] {_ticker}: held {_days_held}d "
+                    f"(horizon {_horizon}d) → trail 5% → 1%"
+                )
+    if states_dirty:
+        _save_states(saved_states)
+
+    # ------------------------------------------------------------------ #
+    # 4c. Reconcile trailing stops on every held position — catches stops that
+    #     failed to attach previously (e.g. buy filled after this script already
+    #     moved on) and positions opened outside this script entirely.
+    # ------------------------------------------------------------------ #
+    from src.trading.stop_manager import reconcile_trailing_stops
+    newly_protected = reconcile_trailing_stops(client, settings)
+    if newly_protected:
+        print(f"[STOP-RECONCILE] Attached trailing stop to {len(newly_protected)}: {newly_protected}")
+
+    # ------------------------------------------------------------------ #
     # 5. Market regime
     # ------------------------------------------------------------------ #
     from src.analytics.market_regime import MarketRegimeAnalyzer
@@ -162,30 +233,61 @@ def run(mode: str, dry_run: bool = False) -> None:
               f"yield_spread={regime_snap.yield_spread or 'N/A'}")
 
     # ------------------------------------------------------------------ #
-    # 6. Rank tickers
+    # 6. Load ranking cache (written by cli/pipeline.py)
     # ------------------------------------------------------------------ #
-    print("\n[RANKING] Running ranker …")
-    from src.ranking.ranker import top_picks
+    from src.ranking.ranker import load_ranking_cache, top_picks
     from src.utils.tickers import get_tickers
     tickers = get_tickers(settings.ticker_source)
-    picks = top_picks(n=settings.top_n_picks, settings=settings,
-                      include_ml=False, include_indicators=True,
-                      tickers=tickers)
 
-    if not picks:
-        print("[RANKING] No picks returned — skipping order placement.")
+    cached = load_ranking_cache(settings)
+    if cached:
+        picks = cached[:settings.top_n_picks]
+        print(f"[RANKING] Loaded {len(cached)} tickers from cache — using top {len(picks)}")
+        print(f"          Top picks: {[e.ticker for e in picks[:10]]} …")
     else:
-        top_tickers = [e.ticker for e in picks]
-        print(f"[RANKING] Top {len(picks)} picks: {top_tickers[:10]} …")
+        print("[RANKING] No cache found — running fast ranker …")
+        picks = top_picks(n=settings.top_n_picks, settings=settings,
+                          include_ml=False, include_indicators=True,
+                          tickers=tickers)
+        if not picks:
+            print("[RANKING] No picks returned — skipping order placement.")
+
+    # ------------------------------------------------------------------ #
+    # 6b. High-conviction priority pass (score >= threshold, no regime filter)
+    # ------------------------------------------------------------------ #
+    from src.trading.strategy import TradeSignal, derive_horizon_days, PositionState
+    hc_signals: list[TradeSignal] = []
+    if picks:
+        for _entry in picks:
+            if (
+                _entry.composite_score >= settings.high_conviction_score_threshold
+                and _entry.ticker not in held_tickers
+            ):
+                hc_signals.append(TradeSignal(
+                    ticker=_entry.ticker,
+                    action="BUY",
+                    reason=f"high_conviction score={_entry.composite_score:.3f}",
+                    score=_entry.composite_score,
+                ))
+                logger.info(
+                    f"[HIGH-CONVICTION] {_entry.ticker} score={_entry.composite_score:.3f} "
+                    f">= {settings.high_conviction_score_threshold}"
+                )
+    if hc_signals:
+        print(f"[HIGH-CONVICTION] {len(hc_signals)} signals: "
+              f"{[s.ticker for s in hc_signals]}")
 
     # ------------------------------------------------------------------ #
     # 7. Generate signals
     # ------------------------------------------------------------------ #
     from src.trading.multi_strategy import MultiStrategyManager
     mgr = MultiStrategyManager(settings)
-    mgr._momentum.seed_states(_load_states())
+    mgr._momentum.seed_states(saved_states)
 
     all_signals = mgr.generate_all_signals(picks, positions, portfolio_value, tickers=tickers)
+    if hc_signals:
+        # Prepend so high-conviction buys are attempted first
+        all_signals = {"high_conviction": hc_signals, **all_signals}
 
     # ------------------------------------------------------------------ #
     # 8 + 9. Risk sizing + circuit breaker pre-order
@@ -220,7 +322,8 @@ def run(mode: str, dry_run: bool = False) -> None:
                 iv_metrics[_t] = compute_iv_metrics(_t)
                 opts_metrics[_t] = compute_options_metrics(_t)
             except Exception as _exc:
-                logger.debug(f"[OPTIONS] metrics failed for {_t}: {_exc}")
+                logger.warning(f"[OPTIONS] metrics failed for {_t}: {_exc}")
+        print(f"[OPTIONS] Metrics loaded for {len(iv_metrics)}/{len(opt_tickers)} tickers")
 
         # --- exits first ---
         opt_live_positions = client.list_option_positions()
@@ -394,6 +497,39 @@ def run(mode: str, dry_run: bool = False) -> None:
 
             order = client.place_order(ticker, sizing.shares, "buy")
             if order:
+                # Alpaca rejects a trailing-stop SELL while the BUY is still open, so wait
+                # for the fill first. If it doesn't fill in time (e.g. queued after-hours),
+                # the reconciliation sweep (step 4c, and the scheduled job) will attach the
+                # stop once it does fill.
+                if client.wait_for_fill(order.order_id, timeout=10.0):
+                    ts = client.place_trailing_stop(
+                        ticker,
+                        sizing.shares,
+                        trail_percent=settings.broker_trailing_stop_pct,
+                    )
+                    if ts is None:
+                        logger.warning(
+                            f"[{ticker}] Broker trailing stop failed after fill — "
+                            "will retry via reconciliation sweep."
+                        )
+                else:
+                    logger.info(
+                        f"[{ticker}] Buy not filled within 10s (queued/after-hours) — "
+                        "trailing stop will be attached by the next reconciliation sweep."
+                    )
+
+                # Derive holding horizon from dominant signal sources
+                rank_entry = next((e for e in picks if e.ticker == ticker), None)
+                horizon = derive_horizon_days(rank_entry) if rank_entry else 30
+                mgr._momentum._states[ticker] = PositionState(
+                    ticker=ticker,
+                    entry_price=price_est,
+                    entry_date=date.today().isoformat(),
+                    peak_price=price_est,
+                    holding_horizon_days=horizon,
+                    broker_trail_pct=settings.broker_trailing_stop_pct,
+                )
+
                 orders_placed += 1
                 held_tickers.add(ticker)
                 current_pos_values[ticker] = sizing.dollar_amount
@@ -406,7 +542,7 @@ def run(mode: str, dry_run: bool = False) -> None:
                 )
                 tax_lots.open_lot(ticker, qty=sizing.shares, price=price_est)
                 print(f"  [BUY] {sizing.shares} x {ticker} @ ~${price_est:.2f} "
-                      f"(${sizing.dollar_amount:,.0f}) [{strategy_name}]")
+                      f"(${sizing.dollar_amount:,.0f}) [{strategy_name}] horizon={horizon}d")
             else:
                 orders_rejected += 1
 

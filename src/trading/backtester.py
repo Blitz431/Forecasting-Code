@@ -1,26 +1,4 @@
-"""Paper-trading backtester: replay 2020-2026 day-by-day with no future data leakage.
-
-Strategy
---------
-- Train window  : configurable (default 2015-01-01 → 2019-12-31)
-- Test window   : configurable (default 2020-01-01 → today)
-- Signals       : technical indicators computed on only past data
-- Rebalance     : weekly (every Friday close)
-- Position size : equal-weight, max_position_pct of portfolio per stock
-- Slippage      : flat BPS cost applied to every trade
-- Spread        : half-spread added to every buy, subtracted from every sell
-- Circuit breaker: halt all trading for the day if portfolio drops > circuit_pct
-- Trailing stop : exit when position falls trailing_stop_pct below its peak
-
-Output
-------
-BacktestResult with:
-  - equity_curve  : daily portfolio value (pd.Series)
-  - trades        : list of Trade
-  - metrics       : PortfolioMetrics
-  - spy_curve     : SPY buy-and-hold comparison
-  - trade_log_df  : DataFrame summary of all trades
-  - regime_overlay: daily regime labels (if available)
+"""Paper-trading backtester: replay day-by-day with no future data leakage.
 
 CLI
 ---
@@ -49,6 +27,20 @@ import pandas as pd
 from src.analytics.portfolio_metrics import compute_metrics, PortfolioMetrics, drawdown_series
 
 logger = logging.getLogger(__name__)
+
+"""
+Purpose: Walk-forward paper-trading simulation — replay daily price history with weekly rebalancing, slippage, trailing stops, and circuit breaker.
+
+Connections:
+  - src/ranking/ranker.py: rank_tickers() called each rebalance Friday to select top-N stocks
+  - src/analytics/portfolio_metrics.py: compute_metrics() on equity curve after simulation
+  - src/analytics/market_regime.py: regime_overlay applied to scale position sizes
+  - config/settings.py: BacktestConfig defaults (train/test dates, capital, slippage, stops)
+  - cli/backtest.py: instantiates Backtester and calls run()
+
+In:  data/raw/daily price parquets for all tickers + signal parquets (via ranker)
+Out: BacktestResult (equity_curve, trades list, PortfolioMetrics, spy_curve, trade_log_df)
+"""
 
 
 # ---------------------------------------------------------------------------#

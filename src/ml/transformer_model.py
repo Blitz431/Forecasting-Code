@@ -1,16 +1,3 @@
-"""Transformer-based time series model for Phase 4 ML Engine.
-
-Implements a simplified Temporal Fusion Transformer (TFT)-style architecture:
-  - Input projection to d_model dimensions
-  - Positional encoding (sinusoidal)
-  - N × Transformer encoder layers (multi-head self-attention + FFN)
-  - Mean pooling over the sequence dimension
-  - Linear regression head
-
-GPU-accelerated on the 3060 Ti via CUDA when available.
-Accepts a standard 2D feature matrix; reshapes to sequences internally.
-"""
-
 from __future__ import annotations
 
 import math
@@ -22,6 +9,17 @@ from src.ml.base import MLModel, _write_sig, _verify_sig
 from src.utils.logging import setup_logger
 
 logger = setup_logger(__name__)
+
+"""
+Purpose: Transformer-based time series regressor (TFT-style) — multi-head self-attention, GPU-accelerated for Phase 4.
+
+Connections:
+  - src/ml/base.py: subclasses MLModel, uses _write_sig/_verify_sig for model integrity
+  - src/ml/runner.py: instantiated when deep_learning=True in run_ticker()
+
+In:  (X_train, y_train) numpy arrays (reshaped to sequences internally)
+Out: MLResult with predictions and RMSE/MAE/MAPE; PyTorch .pt model saved with HMAC signature
+"""
 
 
 def _get_device():

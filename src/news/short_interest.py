@@ -1,18 +1,3 @@
-"""Phase 5: Short interest tracking via yfinance.
-
-Pulls current short interest metrics for one or more tickers and persists
-them as a time-series Parquet file so we can track changes day-over-day.
-
-Metrics sourced from yfinance Ticker.info:
-  - short_ratio       : days-to-cover (shortRatio)
-  - short_pct_float   : short interest as % of float (shortPercentOfFloat)
-  - shares_short      : raw share count shorted (sharesShort)
-  - shares_float      : total float (floatShares)
-
-A "high short interest" flag is set when short_ratio >= settings.short_interest_high
-(default 5.0 days to cover) — consistent with Phase 3 indicator thresholds.
-"""
-
 from __future__ import annotations
 
 from datetime import date
@@ -26,6 +11,19 @@ from src.scraper.storage import upsert_dataframe, load_dataframe
 from src.utils.logging import setup_logger
 
 logger = setup_logger(__name__)
+
+"""
+Purpose: Fetch and track short interest metrics (short ratio, % float, shares short) from yfinance per ticker.
+
+Connections:
+  - src/scraper/storage.py: upsert_dataframe(), load_dataframe() for parquet persistence
+  - config/settings.py: short_interest_high threshold (5.0 days-to-cover), news_short_interest_dir
+  - src/news/runner.py: calls fetch_short_interest(), save_short_interest(), get_short_interest_signal()
+  - src/ranking/ranker.py: reads short interest signal as one ranking input
+
+In:  ticker symbol string
+Out: data/news/short_interest/{ticker}.parquet (short_ratio, short_pct_float, shares_short, high_short_interest flag)
+"""
 
 # yfinance info keys we care about
 _FIELDS = {

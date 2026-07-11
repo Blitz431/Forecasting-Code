@@ -1,24 +1,3 @@
-"""Walk-forward cross-validation for the ML Forecasting Engine (Phase 4).
-
-Walk-forward (a.k.a. time-series split) ensures no future data leaks into training
-by sliding the train/test boundary forward in time.
-
-Two modes:
-  - single_split: one clean train/test boundary (default: 2015-2020 / 2020-2026)
-  - walk_forward_splits: expanding-window folds stepping forward by *step_days*
-
-Public API
-----------
-single_split(X, y, train_end, test_start)
-    -> WFSplit
-
-walk_forward_splits(X, y, min_train_days, step_days, n_test_days)
-    -> list[WFSplit]
-
-apply_split(X, y, split)
-    -> (X_train, y_train, X_test, y_test)
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -29,6 +8,17 @@ import pandas as pd
 from src.utils.logging import setup_logger
 
 logger = setup_logger(__name__)
+
+"""
+Purpose: Walk-forward cross-validation — time-series-safe train/test splitting to prevent data leakage.
+
+Connections:
+  - src/ml/runner.py: calls settings_split() and apply_split() before training each model
+  - config/settings.py: ml_train_start/end, ml_test_start/end boundary dates
+
+In:  feature DataFrame (X) and target Series (y) with DatetimeIndex
+Out: WFSplit dataclass with train/test indices; apply_split() returns (X_train, y_train, X_test, y_test)
+"""
 
 
 @dataclass

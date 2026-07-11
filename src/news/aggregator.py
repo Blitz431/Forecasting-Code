@@ -1,11 +1,3 @@
-"""Phase 5: News aggregation — build DataFrames, store, and query sentiment.
-
-Combines scraped articles with FinBERT sentiment scores into per-ticker
-Parquet files under data/news/articles/.  Provides helper functions to
-compute daily aggregate sentiment and short summaries for use in the
-ranker, ML feature matrix, and dashboard.
-"""
-
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
@@ -17,6 +9,19 @@ from src.scraper.storage import upsert_dataframe, load_dataframe
 from src.utils.logging import setup_logger
 
 logger = setup_logger(__name__)
+
+"""
+Purpose: Combine scraped articles with FinBERT scores into per-ticker parquets and compute rolling sentiment summaries.
+
+Connections:
+  - src/scraper/storage.py: upsert_dataframe(), load_dataframe() for parquet persistence
+  - src/news/runner.py: calls build_news_dataframe(), save_news(), get_sentiment_summary()
+  - src/ranking/ranker.py: reads sentiment summaries as one ranking signal
+  - src/alerts/triggers.py: reads sentiment to detect sentiment flips
+
+In:  article dicts + FinBERT scored dicts from scraper.py / sentiment.py
+Out: data/news/articles/{ticker}.parquet (headline, sentiment_label, sentiment_score, confidence)
+"""
 
 
 # --------------------------------------------------------------------------- #

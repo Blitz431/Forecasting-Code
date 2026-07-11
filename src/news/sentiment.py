@@ -1,18 +1,19 @@
-"""Phase 5: FinBERT-based sentiment scoring for financial news.
-
-Uses ProsusAI/finbert — a BERT model fine-tuned on financial phrases.
-Labels: positive, negative, neutral.
-
-The scorer is a singleton-friendly class. Instantiate once and reuse
-across multiple batches to avoid reloading the model weights repeatedly.
-GPU (CUDA) is used automatically when available.
-"""
-
 from __future__ import annotations
 
 from src.utils.logging import setup_logger
 
 logger = setup_logger(__name__)
+
+"""
+Purpose: FinBERT sentiment scorer — GPU-accelerated financial text classification (positive/negative/neutral).
+
+Connections:
+  - src/news/runner.py: instantiates FinBERTScorer once (singleton) and calls score() per batch
+  - src/news/aggregator.py: receives scored results to store sentiment columns
+
+In:  list of text strings (article headlines + summaries)
+Out: list[dict] with label (positive/negative/neutral), score (-1..+1), confidence per article
+"""
 
 _DEFAULT_MODEL = "ProsusAI/finbert"
 

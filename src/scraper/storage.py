@@ -1,12 +1,3 @@
-"""Parquet-based data storage with upsert logic.
-
-Each ticker gets its own Parquet file. The storage layer handles:
-- Reading existing data
-- Appending new rows
-- Deduplicating by date index
-- Writing back to Parquet
-"""
-
 from pathlib import Path
 
 import pandas as pd
@@ -15,6 +6,19 @@ from src.utils.logging import setup_logger
 from src.utils.validation import remove_duplicates
 
 logger = setup_logger(__name__)
+
+"""
+Purpose: Parquet-based upsert storage layer — read, write, and deduplicate per-ticker data files.
+
+Connections:
+  - src/utils/validation.py: calls remove_duplicates() on every upsert
+  - src/utils/logging.py: logger
+  - Used by: price_scraper.py, dividend_scraper.py, macro_scraper.py, congress_tracker.py,
+    insider_tracker.py, and all signal modules that persist results
+
+In:  pd.DataFrame + target .parquet file path
+Out: merged, deduplicated DataFrame written to disk; returns merged DataFrame
+"""
 
 
 def save_dataframe(df: pd.DataFrame, filepath: Path) -> None:

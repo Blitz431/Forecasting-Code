@@ -1,33 +1,3 @@
-"""Phase 6: Insider trading tracker via SEC EDGAR Form 4 filings.
-
-Parses Form 4 filings (Statement of Changes in Beneficial Ownership) from
-the SEC EDGAR public API to extract buy/sell transactions by corporate
-insiders (CEOs, CFOs, directors, 10%+ shareholders).
-
-Pipeline per ticker:
-  1. Resolve ticker -> CIK via EDGAR company tickers JSON (cached in-memory).
-  2. Fetch the company's recent filing list from
-     https://data.sec.gov/submissions/CIK{padded_cik}.json
-  3. Filter for form type "4" within the lookback window.
-  4. For each filing, download and parse the Form 4 XML document.
-  5. Extract nonDerivativeTransaction records (open-market stock trades).
-
-Storage: data/political/insider/{ticker}.parquet
-Columns: owner_name, owner_role, transaction_type (Buy/Sell),
-         shares, price_per_share, value, is_buy, accession
-         all indexed by transaction date (DatetimeIndex UTC).
-
-Signal output (used by ranker.py and ml/feature_engineer.py):
-  insider_net_buys     — number of buy transactions in window
-  insider_net_sells    — number of sell transactions in window
-  insider_buy_value    — total dollar value of buys
-  insider_sell_value   — total dollar value of sells
-  insider_signal       — float in [-1, 1]: positive = net bullish activity
-
-SEC EDGAR rate limit: max 10 requests/second. We default to ~6-7/sec
-(0.15 s delay between requests) as set by settings.edgar_rate_limit_delay.
-"""
-
 from __future__ import annotations
 
 import time
@@ -44,6 +14,19 @@ from src.scraper.storage import upsert_dataframe, load_dataframe
 from src.utils.logging import setup_logger
 
 logger = setup_logger(__name__)
+
+"""
+Purpose: Fetch and track corporate insider trades (SEC EDGAR Form 4) — CEOs, CFOs, directors, 10%+ shareholders.
+
+Connections:
+  - src/scraper/storage.py: upsert_dataframe(), load_dataframe() for parquet persistence
+  - config/settings.py: insider_lookback_days, edgar_rate_limit_delay, political_insider_dir
+  - src/ranking/ranker.py: calls get_insider_signal() as one ranking input
+
+In:  ticker symbol string (resolved to CIK via SEC EDGAR company tickers JSON)
+Out: data/political/insider/{ticker}.parquet (owner_name, owner_role, transaction_type, shares, value, is_buy)
+     get_insider_signal() → float [-1, +1] based on net buy/sell value over lookback window
+"""
 
 # ---------------------------------------------------------------------------#
 # EDGAR URL constants

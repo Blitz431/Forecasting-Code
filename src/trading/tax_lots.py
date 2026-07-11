@@ -1,22 +1,3 @@
-"""Cost basis tracking with FIFO / LIFO / specific-lot selection.
-
-Tracks every lot opened and closed per ticker.
-Classifies gains as long-term (> 365 days from open) or short-term.
-Provides a tax-loss harvesting scanner to flag positions with unrealized
-losses that could offset realized gains elsewhere.
-
-Writes to ``data/tax_lots/<TICKER>.parquet``.
-
-Usage
------
-    from src.trading.tax_lots import TaxLotTracker
-
-    tracker = TaxLotTracker(settings)
-    tracker.open_lot("AAPL", qty=10, price=180.0, date="2024-01-15")
-    closed = tracker.close_lots("AAPL", qty=5, price=200.0, method="fifo")
-    harvest = tracker.harvest_candidates(portfolio_value=100_000, threshold_pct=5.0)
-"""
-
 from __future__ import annotations
 
 import uuid
@@ -30,6 +11,18 @@ import pandas as pd
 from src.utils.logging import setup_logger
 
 logger = setup_logger(__name__)
+
+"""
+Purpose: Cost basis tracking (FIFO/LIFO/specific lot) with long/short-term gain classification and tax-loss harvesting.
+
+Connections:
+  - cli/trade.py: calls open_lot() on buy and close_lots() on sell
+  - src/reports/morning_report.py: calls harvest_candidates() to flag TLH opportunities
+  - config/settings.py: tax_lots_dir
+
+In:  trade data (ticker, qty, price, date) and portfolio_value
+Out: data/tax_lots/{ticker}.parquet (open/closed lots with cost basis and gain classification)
+"""
 
 Method = Literal["fifo", "lifo", "specific"]
 

@@ -18,6 +18,10 @@ from config.settings import get_settings
 from dashboard.components.tables import style_generic
 
 st.set_page_config(page_title="Backtesting", page_icon="⏮️", layout="wide")
+
+from dashboard.components.market_clock import render_market_clock
+render_market_clock()
+
 st.title("⏮️ Backtesting")
 st.caption("Paper-trading simulation 2020–2026 — equity curve, trade log, regime overlay, Sharpe, max drawdown vs SPY.")
 st.divider()

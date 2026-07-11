@@ -16,6 +16,10 @@ from dashboard.components.charts import sector_donut, ranking_bar, _empty_fig
 from dashboard.components.tables import style_ranking_table, style_generic
 
 st.set_page_config(page_title="Sector Analysis", page_icon="🗂️", layout="wide")
+
+from dashboard.components.market_clock import render_market_clock
+render_market_clock()
+
 st.title("🗂️ Sector Analysis")
 st.caption("Sector breakdown of top picks, concentration warnings, and rotation view.")
 st.divider()
@@ -26,9 +30,14 @@ settings = get_settings()
 # Load top picks ranking
 # ---------------------------------------------------------------------------#
 
-@st.cache_data(ttl=900, show_spinner="Computing rankings …")
+@st.cache_data(ttl=900, show_spinner="Loading rankings …")
 def _load_top_picks(n: int = 30):
-    from src.ranking.ranker import top_picks, to_dataframe
+    from src.ranking.ranker import load_ranking_cache, top_picks, to_dataframe
+    cached = load_ranking_cache()
+    if cached:
+        picks = cached[:n]
+        return to_dataframe(picks), picks
+    # Fallback if no cache exists
     picks = top_picks(n=n, include_ml=False, include_indicators=True)
     return to_dataframe(picks), picks
 

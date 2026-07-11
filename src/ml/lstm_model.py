@@ -1,15 +1,3 @@
-"""LSTM and GRU recurrent neural network models for Phase 4 ML Engine.
-
-Both models accept a standard 2D feature matrix (n_samples, n_features) and
-internally reshape it into fixed-length sequences for the recurrent layers.
-GPU acceleration uses the 3060 Ti via CUDA when available.
-
-Classes
--------
-LSTMModel — Long Short-Term Memory regressor
-GRUModel  — Gated Recurrent Unit regressor (lighter, often faster)
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -18,6 +6,17 @@ import numpy as np
 
 from src.ml.base import MLModel, _write_sig, _verify_sig
 from src.utils.logging import setup_logger
+
+"""
+Purpose: LSTM and GRU recurrent neural network regressors — GPU-accelerated sequence models for Phase 4.
+
+Connections:
+  - src/ml/base.py: subclasses MLModel, uses _write_sig/_verify_sig for model file integrity
+  - src/ml/runner.py: instantiated when deep_learning=True in run_ticker()
+
+In:  (X_train, y_train) numpy arrays (reshaped to sequences internally)
+Out: MLResult with predictions and RMSE/MAE/MAPE; PyTorch .pt model saved with HMAC signature
+"""
 
 logger = setup_logger(__name__)
 

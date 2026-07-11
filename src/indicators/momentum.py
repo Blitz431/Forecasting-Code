@@ -1,22 +1,21 @@
-"""Momentum indicator — fast (4-week) vs slow (12-week) Rate of Change.
-
-Uses ROC (Rate of Change) to measure short-term vs medium-term price momentum.
-
-Signal logic
-------------
-Both fast and slow ROC positive, fast > slow  → STRONG_BUY  (accelerating uptrend)
-Both positive                                  → BUY
-Mixed signals                                  → NEUTRAL
-Both negative                                  → SELL
-Both negative, fast < slow (accelerating down) → STRONG_SELL
-"""
-
 from __future__ import annotations
 
 import pandas as pd
 
 from src.indicators._calc import roc
 from src.indicators.base import Indicator, IndicatorResult, Signal
+
+"""
+Purpose: Momentum indicator — fast (4-week) vs slow (12-week) Rate of Change comparison.
+
+Connections:
+  - src/indicators/_calc.py: roc() math function
+  - src/indicators/base.py: Indicator ABC, IndicatorResult, Signal types
+  - src/indicators/signal_aggregator.py: called with weight 1.5
+
+In:  daily OHLCV pd.DataFrame (needs Close, min ~65 rows)
+Out: IndicatorResult with Signal enum and fast/slow ROC values
+"""
 
 _FAST_WINDOW = 20   # ~4 trading weeks
 _SLOW_WINDOW = 60   # ~12 trading weeks (one quarter)

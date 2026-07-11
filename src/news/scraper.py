@@ -1,13 +1,3 @@
-"""Phase 5: News scraper using RSS feeds and yfinance fallback.
-
-Fetches headlines and summaries for a given ticker from:
-  1. Yahoo Finance RSS
-  2. Google News RSS
-  3. yfinance .news (fallback when RSS yields too few articles)
-
-All articles are normalized to the same dict schema and deduplicated by URL.
-"""
-
 from __future__ import annotations
 
 import time
@@ -21,6 +11,18 @@ from bs4 import BeautifulSoup
 from src.utils.logging import setup_logger
 
 logger = setup_logger(__name__)
+
+"""
+Purpose: Fetch news articles for a ticker from Yahoo Finance RSS, Google News RSS, and yfinance fallback.
+
+Connections:
+  - src/news/runner.py: calls fetch_ticker_news() per ticker
+  - src/news/aggregator.py: receives article dicts and scores them
+  - src/utils/logging.py: logger
+
+In:  ticker symbol string
+Out: list[dict] with headline, url, summary, source, published — deduplicated by URL
+"""
 
 _YAHOO_RSS = "https://feeds.finance.yahoo.com/rss/2.0/headline?s={ticker}&region=US&lang=en-US"
 _GOOGLE_NEWS_RSS = "https://news.google.com/rss/search?q={ticker}+stock&hl=en-US&gl=US&ceid=US:en"

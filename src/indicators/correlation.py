@@ -1,31 +1,21 @@
-"""Correlation indicator — rolling price vs volume and price vs volatility.
-
-Two rolling correlations over a 20-day window:
-
-1. **Price-Volume Correlation**: correlation between daily % price change and
-   daily volume change.
-   High positive → volume confirms price moves (trend health).
-   High negative → volume diverging from price (potential reversal).
-
-2. **Price-Volatility Correlation**: correlation between price level and ATR.
-   Rising price with rising ATR = buying climax risk.
-   Rising price with falling ATR = calm trend (healthier).
-
-Combined signal
----------------
-Both correlations bullish   → BUY
-Both correlations bearish   → SELL
-Price-vol +, price-vola -   → STRONG_BUY (confirmation + calm trend)
-Price-vol -, price-vola +   → STRONG_SELL (divergence + climax)
-Mixed                       → NEUTRAL
-"""
-
 from __future__ import annotations
 
 import pandas as pd
 
 from src.indicators._calc import atr
 from src.indicators.base import Indicator, IndicatorResult, Signal
+
+"""
+Purpose: Correlation indicator — rolling price-volume and price-volatility (ATR) correlations over 20 days.
+
+Connections:
+  - src/indicators/_calc.py: atr() math function
+  - src/indicators/base.py: Indicator ABC, IndicatorResult, Signal types
+  - src/indicators/signal_aggregator.py: called with weight 0.75
+
+In:  daily OHLCV pd.DataFrame (needs Close/High/Low/Volume, min ~25 rows)
+Out: IndicatorResult with Signal enum and price-vol / price-vola correlation values
+"""
 
 _WINDOW = 20
 _STRONG_THRESHOLD = 0.5

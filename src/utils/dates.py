@@ -1,8 +1,18 @@
-"""Market calendar and date utilities."""
-
 from datetime import date, datetime, timedelta
 
 import pandas as pd
+
+"""
+Purpose: Market calendar helpers — trading day navigation, quarter date ranges, and market-hours check.
+
+Connections:
+  - src/scraper/price_scraper.py: uses get_last_trading_day() for incremental update logic
+  - src/trading/backtester.py: uses date_range_trading_days() to iterate the test window
+  - standalone — no project-internal imports
+
+In:  date objects or ISO strings
+Out: adjusted date objects and pd.DatetimeIndex ranges (weekdays only)
+"""
 
 
 # US market holidays (major ones — extend as needed)

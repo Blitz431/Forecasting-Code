@@ -17,6 +17,10 @@ from dashboard.components.tables import style_earnings_table, style_generic
 from src.utils.input_sanitize import clean_ticker
 
 st.set_page_config(page_title="Calendar", page_icon="📅", layout="wide")
+
+from dashboard.components.market_clock import render_market_clock
+render_market_clock()
+
 st.title("📅 Earnings & Economic Calendar")
 st.caption("Upcoming earnings dates, beat/miss history, and market-moving economic events.")
 st.divider()

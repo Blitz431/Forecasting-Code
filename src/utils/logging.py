@@ -1,10 +1,19 @@
-"""Structured logging setup for AutoStockAnalyzer."""
-
 import logging
 import sys
 from pathlib import Path
 
 from config.settings import ROOT_DIR
+
+"""
+Purpose: Centralized logger factory — creates named loggers with console and file handlers.
+
+Connections:
+  - config/settings.py: reads ROOT_DIR to resolve logs/ directory path
+  - Used by: virtually every module calls setup_logger(__name__) at import time
+
+In:  logger name (str), optional log level
+Out: configured logging.Logger; appends to logs/autostockanalyzer.log
+"""
 
 
 def setup_logger(name: str, level: int = logging.INFO) -> logging.Logger:

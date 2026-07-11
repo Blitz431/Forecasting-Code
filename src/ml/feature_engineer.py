@@ -1,23 +1,3 @@
-"""Feature engineering for the ML Forecasting Engine (Phase 4).
-
-Builds a feature matrix (X) and target vector (y) from:
-  - Daily OHLCV price data
-  - FRED macro series
-  - Technical indicators (ta library)
-  - Dividend yield
-  - Seasonality features
-
-Target variable: next-N-day percentage return (default N=1).
-
-Public API
-----------
-build_features(ticker, daily_df, macro_df, dividends_df, target_days, drop_na)
-    -> tuple[pd.DataFrame, pd.Series, list[str]]
-
-load_and_build(ticker, settings, target_days)
-    -> tuple[pd.DataFrame, pd.Series, list[str]]
-"""
-
 from __future__ import annotations
 
 import warnings
@@ -29,6 +9,19 @@ import pandas as pd
 from src.utils.logging import setup_logger
 
 logger = setup_logger(__name__)
+
+"""
+Purpose: Build the feature matrix (X) and return target (y) from daily OHLCV, FRED macro, dividends, and seasonality.
+
+Connections:
+  - src/scraper/storage.py: load_dataframe() reads daily/macro/dividends parquets
+  - config/settings.py: data directory paths, backfill start year
+  - src/utils/logging.py: logger
+  - src/ml/runner.py: calls load_and_build() before training any model
+
+In:  data/raw/daily/{ticker}.parquet, data/raw/macro/*.parquet, data/raw/dividends/{ticker}.parquet
+Out: (X: pd.DataFrame ~40 features, y: pd.Series next-N-day returns, feature_names: list[str])
+"""
 
 # Rolling window sizes for price/volume features
 _WINDOWS = [5, 10, 20, 60]
@@ -209,8 +202,11 @@ def _macro_features(macro_df: pd.DataFrame, index: pd.DatetimeIndex) -> pd.DataF
     if macro_df is None or macro_df.empty:
         return pd.DataFrame(index=index)
 
-    # Reindex to daily, forward-fill gaps (macro data is sparse)
-    macro_aligned = macro_df.reindex(index, method="ffill")
+    # Forward-fill within macro_df first so quarterly/monthly series propagate
+    # across the daily-frequency rows already present in the combined index
+    # (method="ffill" on reindex only fills *new* dates, not pre-existing NaNs).
+    macro_filled = macro_df.sort_index().ffill()
+    macro_aligned = macro_filled.reindex(index, method="ffill")
 
     # Rename columns to avoid clashes
     macro_aligned.columns = [f"macro_{c}" for c in macro_aligned.columns]

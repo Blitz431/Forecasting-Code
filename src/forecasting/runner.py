@@ -1,23 +1,3 @@
-"""Forecast runner — orchestrates all 12 methods for one or many tickers.
-
-Public API
-----------
-run_all_methods(series, horizons, holdout)
-    -> list[ForecastResult]          (one result per method)
-
-run_ticker(ticker, settings, horizons, holdout)
-    -> list[ForecastResult]          (loads data + calls run_all_methods)
-
-run_tickers(tickers, settings, horizons, holdout)
-    -> dict[str, list[ForecastResult]]
-
-comparison_table(results)
-    -> pd.DataFrame                  (sorted by RMSE for easy printing)
-
-save_forecasts(results, ticker, output_dir)
-    -> Path                          (Parquet file path)
-"""
-
 from __future__ import annotations
 
 import traceback
@@ -48,6 +28,23 @@ from src.scraper.storage import get_ticker_filepath, load_dataframe
 from src.utils.logging import setup_logger
 
 logger = setup_logger(__name__)
+
+"""
+Purpose: Orchestrate all 12 forecasting methods for one or many tickers — load data, run, save results.
+
+Connections:
+  - src/forecasting/decomposition.py, exponential_smoothing.py, moving_average.py, regression.py, auto_best.py:
+    instantiates and runs each method
+  - src/forecasting/base.py: ForecastMethod, ForecastResult types
+  - src/forecasting/metrics.py: metrics_summary() for comparison table
+  - src/scraper/storage.py: load_dataframe(), get_ticker_filepath() to read quarterly data
+  - config/settings.py: horizons, holdout periods, forecasts_dir
+  - cli/forecast.py: calls run_ticker(), run_tickers(), comparison_table(), save_forecasts()
+  - src/ranking/ranker.py: reads output parquets to get forecast signal
+
+In:  quarterly OHLCV parquets from data/raw/quarterly/{ticker}.parquet
+Out: data/forecasts/{ticker}.parquet (one row per method with RMSE, MAE, MAPE, and forecast values)
+"""
 
 # Ordered list of all 12 methods — index + 1 == method number
 ALL_METHODS: list[type[ForecastMethod]] = [

@@ -1,32 +1,3 @@
-"""CLI entry point for Phase 4 — ML Forecasting Engine.
-
-Usage examples
---------------
-    # Train all models for AAPL and evaluate on 2020-2026 test set
-    python cli/ml.py --ticker AAPL --train
-
-    # Train with Optuna hyperparameter tuning
-    python cli/ml.py --ticker AAPL --train --tune
-
-    # Train without deep learning models (faster)
-    python cli/ml.py --ticker AAPL --train --no-deep
-
-    # Predict next-day return using the best model
-    python cli/ml.py --ticker AAPL --predict
-
-    # Predict 5-day (weekly) return
-    python cli/ml.py --ticker AAPL --predict --days 5
-
-    # Train multiple tickers
-    python cli/ml.py --tickers AAPL,MSFT,GOOG --train
-
-    # Train all tickers with stored data
-    python cli/ml.py --all --train
-
-    # Show SHAP feature importance after training
-    python cli/ml.py --ticker AAPL --train --shap
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -42,6 +13,19 @@ from src.scraper.storage import list_stored_tickers
 from src.utils.logging import setup_logger
 
 logger = setup_logger("cli.ml")
+
+"""
+Purpose: Phase 4 CLI — train, tune, and predict with ML models (XGBoost, RF, LSTM, etc.) per ticker.
+
+Connections:
+  - src/ml/runner.py: run_ticker(), predict_latest(), best_result(), comparison_table()
+  - src/scraper/storage.py: list_stored_tickers() for --all mode
+  - config/settings.py: raw_daily_dir, model save paths
+  - cli/scheduler.py: invoked as subprocess in job_analysis()
+
+In:  data/raw/daily/*.parquet + data/macro/*.parquet
+Out: data/models/<TICKER>_<model>.pkl (trained models); prints RMSE comparison
+"""
 
 
 # ------------------------------------------------------------------ #

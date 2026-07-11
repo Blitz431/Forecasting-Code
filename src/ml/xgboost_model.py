@@ -1,15 +1,3 @@
-"""XGBoost and LightGBM gradient-boosting models for Phase 4 ML Engine.
-
-Both models implement the MLModel ABC. XGBoost uses GPU acceleration
-(device="cuda") when a CUDA GPU is available; LightGBM uses GPU via
-device="gpu" if available.
-
-Classes
--------
-XGBoostModel  — XGBoost regressor (GPU-accelerated on 3060 Ti)
-LightGBMModel — LightGBM regressor (GPU-accelerated when available)
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -18,6 +6,18 @@ import numpy as np
 
 from src.ml.base import MLModel, MLResult
 from src.utils.logging import setup_logger
+
+"""
+Purpose: XGBoost and LightGBM gradient-boosting models — GPU-accelerated regression for next-N-day return prediction.
+
+Connections:
+  - src/ml/base.py: subclasses MLModel, returns MLResult
+  - src/ml/runner.py: instantiated and trained via run_ticker()
+  - src/ml/tuner.py: hyperparameter search spaces defined for both models
+
+In:  (X_train, y_train) numpy arrays; predict receives X_test
+Out: MLResult with predictions, RMSE/MAE/MAPE, feature_importance; .pkl saved to disk
+"""
 
 logger = setup_logger(__name__)
 
