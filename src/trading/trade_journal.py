@@ -188,6 +188,26 @@ class TradeJournal:
             return df
         return df[df["side"] == "SELL"].reset_index(drop=True)
 
+    def latest_open_strategy(self) -> dict[str, str]:
+        """Return {ticker: strategy} for positions currently open per the journal.
+
+        A position is "open" if the most recent journal row for that ticker
+        is a BUY (i.e. not yet followed by a matching SELL). Tickers whose
+        most recent row is a SELL, or with no journal history, are omitted.
+        """
+        df = self.load()   # already sorted by timestamp, most recent first
+        if df.empty:
+            return {}
+        result: dict[str, str] = {}
+        seen: set[str] = set()
+        for row in df.itertuples():
+            if row.ticker in seen:
+                continue
+            seen.add(row.ticker)
+            if row.side == "BUY":
+                result[row.ticker] = row.strategy
+        return result
+
     def summary_stats(self) -> dict:
         """Return high-level performance stats across all closed trades."""
         exits = self.load_exits()

@@ -21,6 +21,7 @@ Connections:
   - src/trading/strategy.py: delegates momentum entries/exits to MomentumStrategy
   - src/ranking/ranker.py: reads composite scores for momentum and value screens
   - src/indicators/signal_aggregator.py: reads RSI/Bollinger signals for mean-reversion screen
+  - src/trading/trade_journal.py: latest_open_strategy() tags open positions by entry strategy
   - config/settings.py: capital allocation settings, trading rules
   - cli/trade.py: instantiates MultiStrategyManager and calls generate_all_signals()
 
@@ -227,15 +228,16 @@ class MultiStrategyManager:
         result["value"] = _value_signals(tickers, self._s, held, caps["value"])
 
         # --- Momentum ---
+        mean_rev_tickers = self._mean_rev_tickers({p.ticker for p in positions})
         current_scores = {e.ticker: e.composite_score for e in top_picks}
-        momentum_positions = [p for p in positions if not self._is_mean_rev(p.ticker)]
+        momentum_positions = [p for p in positions if p.ticker not in mean_rev_tickers]
         result["momentum"] = (
             self._momentum.generate_entries(top_picks, held, portfolio_value)
             + self._momentum.generate_exits(momentum_positions, current_scores)
         )
 
         # --- Mean-Reversion ---
-        mr_positions = [p for p in positions if self._is_mean_rev(p.ticker)]
+        mr_positions = [p for p in positions if p.ticker in mean_rev_tickers]
         result["mean_reversion"] = (
             _mean_reversion_signals(tickers, self._s, held)
             + _mean_reversion_exits(mr_positions, self._s)
@@ -333,6 +335,15 @@ class MultiStrategyManager:
     # Helpers
     # ---------------------------------------------------------------------- #
 
-    def _is_mean_rev(self, ticker: str) -> bool:
-        """Check if ticker was entered via mean-reversion (heuristic — no tagging yet)."""
-        return False   # TODO: tag positions by strategy in Phase 11
+    def _mean_rev_tickers(self, tickers: set[str]) -> set[str]:
+        """Return the subset of *tickers* whose currently-open position was
+        entered via the mean-reversion strategy, per the trade journal."""
+        if not tickers:
+            return set()
+        try:
+            from src.trading.trade_journal import TradeJournal
+            open_strategy = TradeJournal(self._s).latest_open_strategy()
+        except Exception as exc:
+            logger.warning(f"Could not read trade journal for strategy tagging: {exc}")
+            return set()
+        return {t for t in tickers if open_strategy.get(t) == "mean_reversion"}

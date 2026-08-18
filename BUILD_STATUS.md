@@ -111,7 +111,7 @@ FUTURE changes and known issues, not initial construction.
 |---|---|---|
 | alpaca_client.py | Done | TRADING_MODE=PAPER, ALPACA_BASE_URL points at paper-api — confirmed in env, not live |
 | strategy.py | Done | |
-| multi_strategy.py | Needs Review | line 338: `return False # TODO: tag positions by strategy in Phase 11` — known minor gap, not blocking |
+| multi_strategy.py | Needs Review | Fixed: `_is_mean_rev` stub (always False, so mean-reversion exits never fired) replaced with `_mean_rev_tickers()`, backed by new `TradeJournal.latest_open_strategy()`. Logic traced and syntax-checked; could not run pytest in this environment (no package access in this WSL session — project runs on Windows Python) so status stays Needs Review pending an actual test run, not Done. New tests added at tests/test_trading/test_multi_strategy.py, unrun. |
 | circuit_breaker.py | Done | confirmed wired into cli/trade.py (CircuitBreaker/CircuitBreakerTripped imported and used at 4 call sites) |
 | portfolio.py | Done | |
 | tax_lots.py | Done | |
@@ -168,4 +168,5 @@ Newest entries at top. One line per architect session: date, what was
 audited or built, what changed.
 
 <!-- new entries go below this line -->
+- 2026-08-17 (coder): Fixed multi_strategy.py's `_is_mean_rev` TODO — it always returned False, so mean-reversion exit signals never fired for any position. Added `TradeJournal.latest_open_strategy()` (most-recent-BUY-per-ticker lookup) and `MultiStrategyManager._mean_rev_tickers()`, computed once per generate_all_signals() call instead of the old per-position calls. Added tests/test_trading/test_multi_strategy.py (7 cases: empty journal, open position, closed position omitted, re-buy after close, manager lookup, empty input, journal-read-failure fallback). Could not execute pytest in this WSL session (no pandas/pip/venv access without sudo) — verified by syntax check and manual trace only, left as Needs Review rather than Done pending a real test run.
 - 2026-08-17 (architect): First real audit since this file was seeded as a placeholder. All 11 original phases confirmed Done (files exist, non-stub, wired to their callers) — the project is substantially complete, not just planned. Only concrete issue found: src/trading/multi_strategy.py has one unfinished TODO (position-strategy tagging), marked Needs Review. Added Phase 12 to track the uncommitted research/supply-chain/Docker work (all Done, just not committed to git yet) and Phase 13 to track organic extensions (stop_manager, options_strategy, live_quotes, alerts/triggers, cli/pipeline+rank, 3 extra dashboard pages) built beyond the original plan doc but never added to this tracker. Flagged CLAUDE.md as missing despite being referenced by every agent definition. Confirmed TRADING_MODE=PAPER and ALPACA_BASE_URL point at paper-api — no live-order risk found. No code was executed as part of this audit (existence/completeness/wiring only, no correctness testing).
