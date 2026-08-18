@@ -24,7 +24,7 @@
 14. [Trading Integration (Phase 10 + Smart Trade Management)](#14-trading-integration-phase-10--smart-trade-management)
 15. [Alerts & Morning Report (Phase 11)](#15-alerts--morning-report-phase-11)
 16. [Automation (Phase 12)](#16-automation-phase-12)
-17. [The Dashboard — All 20 Pages](#17-the-dashboard--all-20-pages)
+17. [The Dashboard — All 22 Pages](#17-the-dashboard--all-22-pages)
 18. [How to Install & Run](#18-how-to-install--run)
 19. [Daily Workflow — How to Use It](#19-daily-workflow--how-to-use-it)
 20. [The Role of AI in This System](#20-the-role-of-ai-in-this-system)
@@ -108,7 +108,7 @@ not just output.
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                        DATA SOURCES                         │
-│  yfinance │ FRED API │ Quiver Quant │ SEC EDGAR │ RSS News  │
+│ yfinance │ FRED │ Quiver │ SEC EDGAR │ RSS News │ Ollama+SearXNG │
 └─────────────────────┬───────────────────────────────────────┘
                       │
                       ▼
@@ -158,15 +158,16 @@ src/
   political/    Congressional trades + insider SEC filings
   options/      Put/Call ratio + implied volatility
   calendar/     Earnings dates + economic events
-  analytics/    Portfolio metrics + sector analysis + regime detection
+  analytics/    Portfolio metrics + sector analysis + regime + supply-chain graph
   trading/      Alpaca broker + strategy + risk + backtesting
   ranking/      Composite scorer → top 20
   alerts/       Discord + email notifications
   reports/      Morning PDF/Excel report
   watchlist/    Manual watchlist management
+  research/     Deep-research agent (local Ollama + SearXNG) for supplier discovery
   utils/        Logging, date helpers, validation
 cli/            Command-line entry points for each module
-dashboard/      Streamlit web application (20 pages)
+dashboard/      Streamlit web application (22 pages)
 tests/          Automated test suite
 ```
 
@@ -783,7 +784,7 @@ python cli/scheduler.py  # starts the automated daily pipeline
 
 ---
 
-## 17. The Dashboard — All 20 Pages
+## 17. The Dashboard — All 22 Pages
 
 Run with: `streamlit run dashboard/app.py`
 
@@ -811,6 +812,29 @@ Run with: `streamlit run dashboard/app.py`
 | 18 | Trade Journal | Full trade history, audit log, tax lot view |
 | 19 | Alerts | Configure and test notification channels |
 | 20 | Auto Trades | **Auto-Buy Log** (every automatic purchase with strategy/score/size) + **Exit Calendar** (holding horizon progress, exact exit date, days remaining, trail status, per-position tighten controls) |
+| 21 | Supply Chain | Interactive directed buyer→supplier network (arrows point supplier→buyer), nodes sized by market cap and coloured by sector; filter by neighbourhood/sector/dependency, add relationships manually, and run the **Research suppliers** agent with an inline review-and-approve list |
+| 22 | Deep Research | Standalone control surface for the supplier-discovery agent — pick a target ticker, endpoint/model, and round budget; live progress; review discovered suppliers with their **source links** before promoting them to the graph |
+
+---
+
+### Supply Chain Map & Deep Research (pages 21–22)
+
+The **Supply Chain Map** renders buyer-supplier relationships as a directed graph
+(`src/analytics/supply_chain.py` + `dashboard/components/charts.py`). An arrow **supplier → buyer**
+means the buyer depends on that supplier (`TSM → AAPL` = "AAPL buys from TSM"). Nodes are sized by
+market cap and coloured by sector; `dependency_pct` is an *estimate* of the share of the supplier's
+revenue that comes from that buyer. The graph seeds from a curated set checked into
+`src/analytics/supply_chain_seed.py` (because `data/` is gitignored) and grows through the manual
+"Add relationship" form or the research agent.
+
+**Deep Research** grows the map automatically. A local **Ollama** model plans web searches, a local
+**SearXNG** instance runs them, and the agent reads results and extracts candidate suppliers over
+several rounds — the number of rounds scales with how hard the target is (the "Auto" setting).
+Every candidate must carry a **source link**; findings land in a per-ticker review queue
+(`data/research/<ticker>.json`) and only reach the graph when you approve them, at which point they
+are written with `source="research"` and the evidence link attached. Configure the endpoints with
+`OLLAMA_BASE_URL` (default `http://localhost:11434`) and `SEARX_BASE_URL` (default
+`http://localhost:8080`). CLI: `python cli/research.py --ticker AAPL` (or `--list-models`).
 
 ---
 

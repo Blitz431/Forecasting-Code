@@ -1,0 +1,45 @@
+services:
+  dashboard:
+    build: .
+    # runOnSave + poll watcher so edits to the bind-mounted source hot-reload
+    # through the Docker Desktop / WSL2 mount (inotify events don't cross it reliably).
+    command: streamlit run dashboard/app.py --server.port 8501 --server.address 0.0.0.0 --server.runOnSave true --server.fileWatcherType poll
+    ports:
+      - "8501:8501"
+    volumes:
+      # Mount the whole project (not just ./data) so code edits reflect live with no rebuild.
+      - .:/app
+    env_file:
+      - .env
+    environment:
+      # Inside the container, localhost is the container itself — reach host-run Ollama/SearXNG
+      # via host.docker.internal. (Host-side CLI keeps the localhost defaults from .env.)
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - SEARX_BASE_URL=http://host.docker.internal:8080
+    extra_hosts:
+      # Makes host.docker.internal resolve on Linux engines too (no-op on Docker Desktop).
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  scheduler:
+    build: .
+    command: python cli/scheduler.py --start
+    volumes:
+      - ./data:/app/data
+    env_file:
+      - .env
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

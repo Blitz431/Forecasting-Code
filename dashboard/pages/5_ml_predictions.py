@@ -68,15 +68,27 @@ st.divider()
 # Controls row — train button + prediction button side by side
 # ---------------------------------------------------------------------------#
 
+from src.ml.timing import estimate_duration, record_duration, format_duration
+import time as _time
+
+_est_train_all = estimate_duration("ml_page_train_all", settings)
+_train_help = "Runs full ML pipeline — may take several minutes on GPU." + (
+    f"\n\n⏱ Typically ~{format_duration(_est_train_all)} (avg of past runs)."
+    if _est_train_all else
+    "\n\n⏱ No timing data yet — first run sets the baseline."
+)
+
 ctrl_col, train_info_col = st.columns([1, 3])
 with ctrl_col:
-    run_train = st.button("🏋️  Train All Models", type="primary",
-                          help="Runs full ML pipeline — may take several minutes on GPU.")
+    run_train = st.button("🏋️  Train All Models", type="primary", help=_train_help)
 with train_info_col:
     if not ml_df.empty:
         st.success(f"Stored ML results found ({len(ml_df)} rows). Click Train to refresh.")
+    if _est_train_all:
+        st.caption(f"⏱ Estimated time: ~{format_duration(_est_train_all)}")
 
 if run_train:
+    _train_start = _time.monotonic()
     with st.spinner(f"Training ML models for {selected} (target_days={target_days}) …"):
         try:
             from src.ml.runner import run_ticker as ml_run_ticker, comparison_table
@@ -84,7 +96,9 @@ if run_train:
                                     tune=False, feature_select=True,
                                     deep_learning=True, save=True)
             ml_df = comparison_table(results)
-            st.success("Training complete!")
+            _elapsed = _time.monotonic() - _train_start
+            record_duration("ml_page_train_all", _elapsed, settings)
+            st.success(f"Training complete in {format_duration(_elapsed)}!")
         except Exception as e:
             st.error(f"Training failed: {e}")
 
@@ -107,10 +121,17 @@ def _load_latest_price(ticker: str) -> tuple[float | None, str | None]:
 
 st.subheader("Latest Prediction (XGBoost)")
 
+_est_predict = estimate_duration("ml_page_predict", settings)
+_predict_help = (
+    f"⏱ Typically ~{format_duration(_est_predict)} (avg of past runs)."
+    if _est_predict else "⏱ No timing data yet — first run sets the baseline."
+)
+
 # Cache key — invalidate when ticker or horizon changes, or user forces refresh
 _pred_key = f"ml_pred_{selected}_{target_days}"
-refresh = st.button("🔄 Refresh Prediction")
+refresh = st.button("🔄 Refresh Prediction", help=_predict_help)
 if refresh or _pred_key not in st.session_state:
+    _predict_start = _time.monotonic()
     with st.spinner("Running prediction …"):
         try:
             from src.ml.runner import predict_latest
@@ -118,6 +139,7 @@ if refresh or _pred_key not in st.session_state:
                 selected, model_name="XGBoost",
                 settings=settings, target_days=target_days,
             )
+            record_duration("ml_page_predict", _time.monotonic() - _predict_start, settings)
         except Exception as e:
             st.session_state[_pred_key] = None
             st.error(f"Prediction failed: {e}")

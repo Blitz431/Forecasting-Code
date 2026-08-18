@@ -12,7 +12,9 @@
       "Bash(python -c \" import ast, pathlib for f in ['src/alerts/notifier.py','config/settings.py','cli/report.py']: ast.parse\\(pathlib.Path\\(f\\).read_text\\(encoding='utf-8'\\)\\) print\\('OK', f\\) \")",
       "Bash(python3 -m py_compile \"J:/Coding/AutoStockAnalyizer Software/src/ranking/ranker.py\")",
       "Bash(python3 -m py_compile \"J:/Coding/AutoStockAnalyizer Software/dashboard/app.py\")",
-      "Bash(grep -rn \"\\\\/data\\\\/\\\\|\\\\\\\\\\\\\\\\data\\\\\\\\\\\\\\\\\" \"J:/Coding/AutoStockAnalyizer Software/src\" --include=\"*.py\")"
+      "Bash(grep -rn \"\\\\/data\\\\/\\\\|\\\\\\\\\\\\\\\\data\\\\\\\\\\\\\\\\\" \"J:/Coding/AutoStockAnalyizer Software/src\" --include=\"*.py\")",
+      "Bash(grep -Ei \"\\\\.\\(json|txt|csv|yaml|yml\\)$\")",
+      "Bash(grep -n \"^#\\\\{1,3\\\\} \" DOCUMENTATION.md)"
     ]
   }
 }

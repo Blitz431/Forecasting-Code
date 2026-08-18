@@ -11,14 +11,19 @@ ROOT = Path(__file__).parent.parent
 LOG_DIR = ROOT / "data" / "logs"
 
 """
-Purpose: Daily automation loop — APScheduler cron jobs that run the full pipeline (scrape → indicators → forecast/ML/news → report → EOD snapshot).
+Purpose: Daily automation loop — APScheduler cron jobs that run the full pipeline (scrape → indicators → forecast/ML/news → report → market-open trading → EOD snapshot).
 
 Connections:
   - cli/scrape.py: job_scrape() at 06:00 UTC
   - cli/indicators.py: job_indicators() at 06:15 UTC
   - cli/forecast.py, cli/ml.py, cli/news.py: job_analysis() at 06:30 UTC
   - cli/report.py: job_report() at 07:00 UTC (morning report + alerts)
-  - cli/trade.py: job_eod() at 16:00 UTC (EOD snapshot)
+  - cli/trade.py: job_trade_open() at 09:35 America/New_York (real paper-trade execution)
+  - cli/trade.py: job_eod() at 16:05 America/New_York (EOD snapshot, --dry-run)
+
+The market-open and EOD jobs are anchored to America/New_York (not a fixed UTC hour) so
+they track NYSE open/close correctly across Daylight Saving transitions — see
+_NY_JOB_REGISTRY below.
 
 In:  system clock (APScheduler triggers); no data inputs directly
 Out: data/logs/scheduler_YYYY-MM-DD.log; launches all pipeline subprocesses
@@ -181,8 +186,23 @@ def job_live_quotes() -> None:
         _log(f"!!! ERROR  live-quotes: {exc}", log)
 
 
+def job_trade_open() -> None:
+    """9:35 AM America/New_York — place the day's real paper trades.
+
+    Runs cli/trade.py for real (no --dry-run). Still paper-only unless
+    ALPACA_LIVE_TRADING=true is explicitly set in .env (cli/trade.py enforces this).
+    """
+    log = _daily_log_path()
+    _log("=== JOB: trade-open ===", log)
+    _run_step(
+        "trade-open",
+        [sys.executable, str(ROOT / "cli" / "trade.py"), "--mode", "paper"],
+        log,
+    )
+
+
 def job_eod() -> None:
-    """4:00 PM — EOD portfolio snapshot.
+    """4:05 PM America/New_York — EOD portfolio snapshot.
 
     Uses --dry-run so the portfolio tracker saves the snapshot without
     placing any new orders.
@@ -197,15 +217,23 @@ def job_eod() -> None:
 
 
 # ---------------------------------------------------------------------------#
-# Job registry — (name, cron kwargs, function)
+# Job registries — (name, cron kwargs, function)
 # ---------------------------------------------------------------------------#
 
+# Fixed UTC-time jobs — pre-market data prep, not tied to exact NYSE open/close.
 _JOB_REGISTRY: list[tuple[str, dict, object]] = [
     ("scrape",     {"hour": 6,  "minute": 0},  job_scrape),
     ("indicators", {"hour": 6,  "minute": 15}, job_indicators),
     ("analysis",   {"hour": 6,  "minute": 30}, job_analysis),
     ("report",     {"hour": 7,  "minute": 0},  job_report),
-    ("eod",        {"hour": 16, "minute": 0},  job_eod),
+]
+
+# America/New_York-anchored jobs — tied to actual NYSE open/close, so they must track
+# Daylight Saving automatically rather than using a fixed UTC hour (a fixed-UTC "eod" job
+# here previously drifted by an hour across DST and never actually landed near the close).
+_NY_JOB_REGISTRY: list[tuple[str, dict, object]] = [
+    ("trade-open", {"hour": 9,  "minute": 35}, job_trade_open),
+    ("eod",        {"hour": 16, "minute": 5},  job_eod),
 ]
 
 # Interval-based jobs (run continuously on a fixed cadence, not at a daily clock time)
@@ -231,6 +259,10 @@ def cmd_start() -> None:
     for name, cron_kwargs, fn in _JOB_REGISTRY:
         scheduler.add_job(fn, CronTrigger(timezone="UTC", **cron_kwargs), id=name)
         print(f"  {name:<14} @ {cron_kwargs['hour']:02d}:{cron_kwargs['minute']:02d} UTC")
+
+    for name, cron_kwargs, fn in _NY_JOB_REGISTRY:
+        scheduler.add_job(fn, CronTrigger(timezone="America/New_York", **cron_kwargs), id=name)
+        print(f"  {name:<14} @ {cron_kwargs['hour']:02d}:{cron_kwargs['minute']:02d} America/New_York")
 
     for name, interval_kwargs, fn in _INTERVAL_JOB_REGISTRY:
         scheduler.add_job(fn, IntervalTrigger(**interval_kwargs), id=name)
@@ -260,6 +292,12 @@ def cmd_run_now() -> None:
         except Exception as exc:
             _log(f"!!! UNCAUGHT in job '{name}': {exc}", log)
 
+    for name, _, fn in _NY_JOB_REGISTRY:
+        try:
+            fn()  # type: ignore[operator]
+        except Exception as exc:
+            _log(f"!!! UNCAUGHT in job '{name}': {exc}", log)
+
     _log("[scheduler] --run-now complete", log)
     print("\n[scheduler] Full pipeline complete.")
 
@@ -270,17 +308,23 @@ def cmd_status() -> None:
 
     now = datetime.now(tz=timezone.utc)
     print(f"\nScheduler status — {now.strftime('%Y-%m-%d %H:%M:%S UTC')}\n")
-    print(f"  {'Job':<14}  {'Time (UTC)':<12}  Next Scheduled Run")
-    print("  " + "-" * 58)
+    print(f"  {'Job':<14}  {'Time':<20}  Next Scheduled Run")
+    print("  " + "-" * 68)
     for name, cron_kwargs, _ in _JOB_REGISTRY:
         trigger = CronTrigger(timezone="UTC", **cron_kwargs)
         next_fire = trigger.get_next_fire_time(None, now)
-        cron_str = f"{cron_kwargs['hour']:02d}:{cron_kwargs['minute']:02d}"
+        cron_str = f"{cron_kwargs['hour']:02d}:{cron_kwargs['minute']:02d} UTC"
         next_str = next_fire.strftime("%Y-%m-%d %H:%M UTC") if next_fire else "N/A"
-        print(f"  {name:<14}  {cron_str:<12}  {next_str}")
+        print(f"  {name:<14}  {cron_str:<20}  {next_str}")
+    for name, cron_kwargs, _ in _NY_JOB_REGISTRY:
+        trigger = CronTrigger(timezone="America/New_York", **cron_kwargs)
+        next_fire = trigger.get_next_fire_time(None, now)
+        cron_str = f"{cron_kwargs['hour']:02d}:{cron_kwargs['minute']:02d} America/New_York"
+        next_str = next_fire.strftime("%Y-%m-%d %H:%M %Z") if next_fire else "N/A"
+        print(f"  {name:<14}  {cron_str:<20}  {next_str}")
     for name, interval_kwargs, _ in _INTERVAL_JOB_REGISTRY:
         mins = interval_kwargs.get("minutes", 0)
-        print(f"  {name:<14}  every {mins} min   (only while --start is running)")
+        print(f"  {name:<14}  every {mins} min{'':<12}  (only while --start is running)")
     print()
 
 

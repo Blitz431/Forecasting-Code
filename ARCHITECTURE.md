@@ -26,6 +26,12 @@ config/settings.py ──> everything (all modules read settings)
 src/utils/         ──> everything (logging, tickers, validation)
 ```
 
+Not everything runs on the daily cycle. A few features are **dashboard-driven** — they read and
+write their own JSON state at request time: `watchlist/` (`data/watchlist.json`),
+`analytics/supply_chain.py` (`data/supply_chain.json`, `data/company_meta.json`), and the
+`research/` deep-research agent (`data/research/`, plus the `cli/research.py` entry point). See
+the JSON Storage Map below.
+
 ---
 
 ## Daily Runtime Cycle
@@ -233,6 +239,61 @@ src/news/runner.py
     ├── src.news.short_interest
     ├── src.news.aggregator
     └── src.utils.logging
+
+src/analytics/company_meta.py
+    ├── config.settings
+    ├── src.analytics.sector_analysis   (sector lookup reuse — does not fork the sector map)
+    └── src.utils.logging
+
+src/analytics/supply_chain_seed.py
+    └── (no imports — a static list of curated relationships)
+
+src/analytics/supply_chain.py
+    ├── config.settings
+    ├── networkx                        (DiGraph + spring layout)
+    ├── src.analytics.supply_chain_seed (fallback when the JSON file is absent)
+    └── src.utils.logging
+
+src/research/cache.py
+    └── src.utils.logging               (SHA-keyed disk cache under data/research/cache/)
+
+src/research/sources.py
+    └── (no imports — domain trust tiering for evidence URLs)
+
+src/research/ollama_client.py
+    ├── config.settings                 (settings.ollama)
+    ├── src.research.cache
+    └── src.utils.logging
+
+src/research/search_client.py
+    ├── config.settings                 (settings.searx)
+    ├── src.research.cache
+    ├── src.research.sources
+    └── src.utils.{input_sanitize, logging}
+
+src/research/page_fetch.py
+    ├── src.research.cache
+    └── src.utils.logging               (SSRF-guarded page text fetch — untrusted data)
+
+src/research/entity_resolve.py
+    ├── src.analytics.company_meta       (reverse name→ticker map)
+    └── src.utils.{tickers, input_sanitize}
+
+src/research/supply_chain_agent.py
+    ├── config.settings
+    ├── src.research.{ollama_client, search_client, page_fetch, sources, entity_resolve, cache}
+    ├── src.analytics.{company_meta, supply_chain}  (company name; RELATIONSHIP_TYPES vocab)
+    └── src.utils.{input_sanitize, logging}
+
+src/research/research_store.py
+    ├── config.settings
+    ├── src.analytics.supply_chain       (approve() → SupplyChainGraph.add(source="research"))
+    ├── src.research.supply_chain_agent  (SupplierFinding record)
+    └── src.utils.logging
+
+src/research/runner.py
+    ├── src.research.{supply_chain_agent, research_store}
+    └── src.utils.{input_sanitize, logging}
 ```
 
 ---
@@ -246,6 +307,7 @@ src/news/runner.py
 | `cli/forecast.py` | forecasting/runner | data/raw/quarterly/ | data/forecasts/ |
 | `cli/ml.py` | ml/runner | data/raw/, data/processed/ | data/processed/, model files |
 | `cli/news.py` | news/runner | RSS feeds, yfinance.news | data/news/ |
+| `cli/research.py` | research/runner | Ollama, SearXNG, web pages | data/research/ (review queue) |
 
 ---
 
@@ -301,6 +363,71 @@ data/
             Columns: short_ratio, short_pct_float, shares_short, shares_float,
                      high_short_interest
             Index:   DatetimeIndex (daily, date of fetch)
+```
+
+---
+
+## JSON Storage Map
+
+Not everything is Parquet. Small, hand-editable, or user-authored state is stored as JSON
+directly under `data/`. These files are read and written by the dashboard at request time,
+not by the scheduled CLI pipeline.
+
+```
+data/
+├── supply_chain.json    ── written by: analytics/supply_chain.py (SupplyChainGraph.save)
+│                           read by:    analytics/supply_chain.py,
+│                                       dashboard/pages/21_supply_chain.py
+│   {
+│     "version": 1,
+│     "updated": "YYYY-MM-DD",
+│     "relationships": [
+│       {"supplier", "buyer", "type", "dependency_pct", "source", "added", "source_url"}
+│     ]
+│   }
+│   Edge direction:  supplier -> buyer  ("TSM -> AAPL" = AAPL buys from TSM)
+│   dependency_pct:  estimated % of the SUPPLIER's revenue coming from that buyer
+│                    (supplier-side concentration). Estimates, not filings data.
+│   source:          "curated" (seed), "manual" (dashboard form), or "research" (agent)
+│   source_url:      evidence link for research-discovered edges (else ""); shown in
+│                    page 21's relationships table and edge hover
+│   Identity:        the (supplier, buyer) pair — save() dedupes and sorts on it
+│   Bootstrap:       data/ is gitignored, so the curated seed is checked in as
+│                    src/analytics/supply_chain_seed.py. load() returns the seed
+│                    when this file is absent; the first add/remove materialises
+│                    the file, and from then on the file wins. Same arrangement as
+│                    _STATIC_SECTORS vs sector_cache.json.
+│
+├── company_meta.json    ── written by: analytics/company_meta.py (CompanyMeta.save)
+│                           read by:    dashboard/pages/21_supply_chain.py
+│   {"AAPL": {"name", "sector", "market_cap", "fetched"}}
+│   Market cap is produced by no scraper in this project — it is fetched from
+│   yfinance on demand, only for tickers actually requested, and treated as
+│   stale after 30 days. Sector falls back to SectorAnalyzer.get_sector().
+│
+├── research/            ── written by: research/research_store.py (ResearchStore.save_findings)
+│   └── <TICKER>.json       read by:    dashboard pages 21/22, cli/research.py
+│       {"version", "ticker", "updated", "findings":[
+│         {"supplier_name","supplier_ticker","buyer_ticker","rel_type",
+│          "dependency_pct","confidence","evidence_urls","rationale"}]}
+│       The deep-research agent's REVIEW QUEUE. Each finding carries its evidence URLs.
+│       Approving a finding promotes it into supply_chain.json (source="research",
+│       source_url=top-tier evidence link) and drops it from the queue.
+│   research/cache/       ── written by: research/cache.py (ResearchCache)
+│       SHA-keyed JSON memo of Ollama chat + SearXNG search + page fetches, so repeat
+│       queries/prompts skip the network. Safe to delete; rebuilds on demand.
+│
+├── sector_cache.json    ── written by: analytics/sector_analysis.py
+│                           read by:    analytics/sector_analysis.py, company_meta.py
+│   {"AAPL": "Technology"} — layered over the _STATIC_SECTORS fallback map
+│
+├── watchlist.json       ── written by: watchlist/watchlist.py
+│                           read by:    dashboard/pages/15_watchlist.py
+│   ["AAPL", "SPY"] — plain list of tickers
+│
+├── strategy_states.json        ── written by: trading/strategy.py (PositionState)
+├── circuit_breaker_state.json  ── written by: trading/circuit_breaker.py
+└── run_cache/session.json      ── written by: dashboard/components/session_cache.py
 ```
 
 ---
@@ -407,6 +534,46 @@ Phase 10 — Trading
 Phase 11 — Alerts & Reports
   src/alerts/notifier.py             ──> triggered by: all phases
   src/reports/morning_report.py      ──> reads: ALL data/ + ranking output
+
+Supply Chain Map (dashboard-only — no CLI, no scheduled job)
+  src/analytics/supply_chain.py      ──> reads/writes: data/supply_chain.json
+  src/analytics/company_meta.py      ──> reads: yfinance (on demand)
+                                         writes: data/company_meta.json
+  dashboard/components/charts.py     ──> supply_chain_network() renders the DiGraph
+  dashboard/pages/21_supply_chain.py ──> the only caller; add/remove relationships
+                                         through the UI form, then st.cache_data.clear()
+
+  Data flow:  supply_chain.json ──> SupplyChainGraph.load() ──> build_graph() (nx.DiGraph)
+              ──> layout() (spring_layout, seed=42 so reruns are stable)
+              ──> supply_chain_network(g, pos, meta) ──> st.plotly_chart
+
+  Future: source relationships automatically from SEC 10-K filings, where companies
+  disclose customers above 10% of revenue. That would write into the same
+  supply_chain.json with source="sec" alongside the curated and manual rows.
+
+Supply Chain Research (dashboard-only — local-LLM agent behind a review queue)
+  New settings: OllamaSettings (OLLAMA_*) + SearxSettings (SEARX_*) sub-configs.
+  src/research/supply_chain_agent.py ──> drives Ollama (LLM) + SearXNG (search) + web
+                                         page fetches over difficulty-scaled rounds
+  src/research/runner.py             ──> orchestrates a run; never raises (errors → dict)
+  src/research/research_store.py     ──> writes: data/research/<ticker>.json (review queue)
+                                         approve() ──> supply_chain.py add(source="research")
+  cli/research.py                    ──> CLI entry (--ticker/--rounds/--list-models)
+  dashboard/pages/22_deep_research.py + the "Research suppliers" panel on page 21
+                                         ──> run + review + approve in the UI
+
+  Data flow:  Ollama + SearXNG + web ──> agent ──> SupplierFinding[] ──> research_store
+              ──> data/research/<ticker>.json (review) ──[user approves]──>
+              SupplyChainGraph.add(source="research", source_url) ──> supply_chain.json ──> page 21
+
+  Accuracy/speed: SHA-keyed cache (data/research/cache/), schema-validated JSON output,
+  multi-domain corroboration + source-trust tiering (sources.py), and convergence
+  early-stop. Deferred backlog: EDGAR 10-K grounding, embedding entity resolution,
+  bidirectional (customer) discovery, a scheduler job, and an approval feedback loop.
+
+  Safety: web content is untrusted data — the extraction prompt forbids obeying embedded
+  instructions, output is schema-constrained, page fetches are SSRF-guarded, and every
+  finding is human-reviewed before it can touch the graph.
 ```
 
 ---

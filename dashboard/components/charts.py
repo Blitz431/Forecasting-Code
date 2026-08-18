@@ -30,6 +30,49 @@ _BLUE     = "#5c7cfa"
 _ORANGE   = "#ffa726"
 _PURPLE   = "#ab47bc"
 
+# Two sector vocabularies are live in this project: the GICS names in
+# analytics/sector_analysis.py:_STATIC_SECTORS, and yfinance's own names coming
+# back from .info["sector"]. Normalise yfinance -> GICS so a company keeps one
+# colour and one legend entry no matter which path supplied its sector.
+_SECTOR_ALIASES = {
+    "Healthcare":          "Health Care",
+    "Financial Services":  "Financials",
+    "Consumer Cyclical":   "Consumer Discretionary",
+    "Consumer Defensive":  "Consumer Staples",
+    "Basic Materials":     "Materials",
+}
+
+# Sector -> colour. Shared so the supply-chain map and any future sector-coloured
+# chart agree. Drawn from the palette above where possible.
+_SECTOR_COLORS = {
+    "Technology":             _BLUE,
+    "Communication Services": _PURPLE,
+    "Consumer Discretionary": _ORANGE,
+    "Consumer Staples":       "#26a69a",
+    "Financials":             "#66bb6a",
+    "Health Care":            "#4dd0e1",
+    "Industrials":            "#8d99ae",
+    "Energy":                 "#ef5350",
+    "Real Estate":            "#f06292",
+    "Utilities":              "#9ccc65",
+    "Materials":              "#a1887f",
+    "ETF":                    "#78909c",
+    "Commodities":            "#ffd54f",
+    "Unknown":                "#616161",
+}
+
+
+def normalize_sector(sector: str | None) -> str:
+    """Map a yfinance or GICS sector name onto the canonical GICS name."""
+    if not sector:
+        return "Unknown"
+    return _SECTOR_ALIASES.get(sector, sector)
+
+
+def sector_color(sector: str | None) -> str:
+    """Colour for a sector under either vocabulary."""
+    return _SECTOR_COLORS.get(normalize_sector(sector), _SECTOR_COLORS["Unknown"])
+
 _LAYOUT_BASE = dict(
     template=_TEMPLATE,
     paper_bgcolor=_BG,
@@ -460,6 +503,199 @@ def earnings_timeline(df: pd.DataFrame) -> go.Figure:
         height=max(300, len(df) * 25),
     ))
     return fig
+
+
+# ---------------------------------------------------------------------------#
+# Supply chain network
+# ---------------------------------------------------------------------------#
+
+def _fmt_market_cap(value) -> str:
+    """Human-readable market cap ($1.2T / $340.5B / $12.3M)."""
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return "n/a"
+    for cutoff, suffix in ((1e12, "T"), (1e9, "B"), (1e6, "M")):
+        if v >= cutoff:
+            return f"${v / cutoff:.1f}{suffix}"
+    return f"${v:,.0f}"
+
+
+def supply_chain_network(
+    g,
+    pos: dict,
+    meta: dict | None = None,
+    focus: str | None = None,
+    height: int = 700,
+) -> go.Figure:
+    """Directed supplier -> buyer network.
+
+    Arrows point FROM the supplier TO the buyer, so ``TSM -> AAPL`` reads
+    "AAPL buys from TSM". Nodes are sized by market cap and coloured by sector.
+
+    Args:
+        g:      networkx.DiGraph with edge attrs type / dependency_pct / source.
+        pos:    {node: (x, y)} layout positions.
+        meta:   {ticker: {name, sector, market_cap}} — missing entries degrade
+                gracefully to an unsized, "Unknown"-sector node.
+        focus:  optional ticker to highlight with a ring.
+        height: figure height in px.
+    """
+    if g is None or g.number_of_nodes() == 0 or not pos:
+        return _empty_fig("No supply-chain relationships to show")
+
+    meta = meta or {}
+    fig = go.Figure()
+
+    # --- edges: one None-separated trace for the shafts ---------------------
+    edge_x: list = []
+    edge_y: list = []
+    mid_x: list[float] = []
+    mid_y: list[float] = []
+    mid_text: list[str] = []
+
+    for supplier, buyer, attrs in g.edges(data=True):
+        if supplier not in pos or buyer not in pos:
+            continue
+        x0, y0 = pos[supplier]
+        x1, y1 = pos[buyer]
+        edge_x += [x0, x1, None]
+        edge_y += [y0, y1, None]
+
+        pct = attrs.get("dependency_pct")
+        pct_txt = f"{pct:.0f}% of {supplier} revenue" if pct is not None else "unknown share"
+        mid_x.append((x0 + x1) / 2)
+        mid_y.append((y0 + y1) / 2)
+        origin = ""
+        src = attrs.get("source", "")
+        if src and src != "curated":
+            origin = f"<br>Origin: {src}"
+            if attrs.get("source_url"):
+                origin += " · source link in the table below"
+        mid_text.append(
+            f"<b>{supplier} → {buyer}</b><br>"
+            f"{buyer} buys from {supplier}<br>"
+            f"Type: {attrs.get('type', 'n/a')}<br>"
+            f"Est. dependency: {pct_txt}{origin}"
+        )
+
+    fig.add_trace(go.Scatter(
+        x=edge_x, y=edge_y,
+        mode="lines",
+        line=dict(color="#3d4351", width=1),
+        hoverinfo="skip",
+        showlegend=False,
+    ))
+
+    # Invisible midpoint markers carry the edge hover card — line traces and
+    # annotations cannot hover usefully on their own.
+    fig.add_trace(go.Scatter(
+        x=mid_x, y=mid_y,
+        mode="markers",
+        marker=dict(size=12, color="rgba(0,0,0,0)"),
+        hoverinfo="text",
+        hovertext=mid_text,
+        showlegend=False,
+    ))
+
+    # --- arrowheads: Plotly scatter lines carry no direction ----------------
+    # One annotation per edge, drawn as a headed arrow with no shaft of its own
+    # (the shaft is the line trace above; standoff keeps the head off the node).
+    annotations = []
+    for supplier, buyer in g.edges():
+        if supplier not in pos or buyer not in pos:
+            continue
+        x0, y0 = pos[supplier]
+        x1, y1 = pos[buyer]
+        annotations.append(dict(
+            ax=x0, ay=y0, axref="x", ayref="y",
+            x=x1, y=y1, xref="x", yref="y",
+            showarrow=True,
+            arrowhead=2, arrowsize=1.4, arrowwidth=1,
+            arrowcolor="#5a6273",
+            standoff=14, startstandoff=10,
+            text="",
+        ))
+
+    # --- nodes ---------------------------------------------------------------
+    caps = [
+        meta.get(n, {}).get("market_cap")
+        for n in g.nodes()
+        if meta.get(n, {}).get("market_cap")
+    ]
+    max_cap = max(caps) if caps else None
+
+    node_x, node_y, sizes, colors, texts, labels, lines = [], [], [], [], [], [], []
+    for n in g.nodes():
+        if n not in pos:
+            continue
+        x, y = pos[n]
+        node_x.append(x)
+        node_y.append(y)
+
+        info = meta.get(n, {})
+        cap = info.get("market_cap")
+        sector = normalize_sector(info.get("sector"))
+
+        # sqrt scaling so node AREA tracks market cap — linear radius lets
+        # mega-caps swamp the canvas.
+        if cap and max_cap:
+            sizes.append(15 + 45 * (float(cap) / float(max_cap)) ** 0.5)
+        else:
+            sizes.append(20)
+
+        colors.append(sector_color(sector))
+        lines.append(3 if focus and n == focus else 1)
+        labels.append(n)
+
+        n_suppliers = g.in_degree(n)
+        n_buyers = g.out_degree(n)
+        texts.append(
+            f"<b>{n}</b> — {info.get('name', n)}<br>"
+            f"Sector: {sector}<br>"
+            f"Market cap: {_fmt_market_cap(cap)}<br>"
+            f"Suppliers: {n_suppliers} &nbsp;|&nbsp; Buyers: {n_buyers}"
+        )
+
+    fig.add_trace(go.Scatter(
+        x=node_x, y=node_y,
+        mode="markers+text",
+        marker=dict(
+            size=sizes,
+            color=colors,
+            line=dict(color="#e0e0e0", width=lines),
+        ),
+        text=labels,
+        textposition="middle center",
+        textfont=dict(size=9, color="#0e1117", family="Inter, Arial, sans-serif"),
+        hoverinfo="text",
+        hovertext=texts,
+        showlegend=False,
+    ))
+
+    # Axis ticks are meaningless for a force-directed layout — hide them.
+    # Must go through _merged_layout so the base styling is not clobbered.
+    fig.update_layout(**_merged_layout(
+        height=height,
+        showlegend=False,
+        hovermode="closest",
+        margin=dict(l=20, r=20, t=50, b=20),
+        title="Supply Chain — arrows point supplier → buyer",
+        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False, visible=False),
+        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False, visible=False),
+        annotations=annotations,
+    ))
+    return fig
+
+
+def sector_legend_items(sectors) -> list[tuple[str, str]]:
+    """(sector, hex colour) pairs for rendering a legend outside the figure.
+
+    Names are normalised first, so the two vocabularies collapse to one entry
+    per sector rather than listing "Healthcare" and "Health Care" separately.
+    """
+    canonical = {normalize_sector(s) for s in sectors}
+    return [(s, sector_color(s)) for s in sorted(canonical)]
 
 
 # ---------------------------------------------------------------------------#

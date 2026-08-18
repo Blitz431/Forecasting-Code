@@ -80,6 +80,17 @@ def render_ticker_sidebar() -> str:
         st.sidebar.caption(f"Last analyzed: {run_time}  {flags}")
 
     # --- Analysis buttons ---
+    from src.ml.timing import estimate_duration, record_duration, format_duration
+    import time as _time
+
+    _est_run_all      = estimate_duration("run_all", settings)
+    _est_train_ml     = estimate_duration("train_ml", settings)
+    _est_predict_only = estimate_duration("predict_only", settings)
+
+    def _eta_suffix(est: float | None) -> str:
+        return f"\n\n⏱ Typically ~{format_duration(est)} (avg of past runs)." if est else \
+               "\n\n⏱ No timing data yet — first run sets the baseline."
+
     st.sidebar.markdown("---")
     run_all = st.sidebar.button(
         "▶ Run All Analysis",
@@ -88,35 +99,49 @@ def render_ticker_sidebar() -> str:
         help=(
             "Runs forecast, signals, ML (trains if no saved model), "
             "news, and options for the selected ticker."
-        ),
+        ) + _eta_suffix(_est_run_all),
     )
     train_ml = st.sidebar.button(
         "🏋️ Train ML Models",
         use_container_width=True,
-        help="Force-train all ML models for the selected ticker (overwrites existing).",
+        help="Force-train all ML models for the selected ticker (overwrites existing)."
+        + _eta_suffix(_est_train_ml),
     )
     predict_only = st.sidebar.button(
         "🔮 Predict Only",
         use_container_width=True,
-        help="Run ML prediction using saved model (warns if none found).",
+        help="Run ML prediction using saved model (warns if none found)."
+        + _eta_suffix(_est_predict_only),
+    )
+    st.sidebar.caption(
+        "⏱ "
+        + (f"Run All ~{format_duration(_est_run_all)}" if _est_run_all else "Run All: —")
+        + "  ·  "
+        + (f"Train ML ~{format_duration(_est_train_ml)}" if _est_train_ml else "Train ML: —")
+        + "  ·  "
+        + (f"Predict ~{format_duration(_est_predict_only)}" if _est_predict_only else "Predict: —")
     )
 
     if run_all:
+        _run_start  = _time.monotonic()
         _step_label = st.sidebar.empty()
         _progress   = st.sidebar.progress(0)
         errors = _run_all_analysis(selected, settings, _step_label, _progress)
         _progress.empty()
         _step_label.empty()
+        _elapsed = _time.monotonic() - _run_start
+        record_duration("run_all", _elapsed, settings)
         if errors:
             st.sidebar.warning(
-                f"Completed with {len(errors)} issue(s):\n"
+                f"Completed with {len(errors)} issue(s) in {format_duration(_elapsed)}:\n"
                 + "\n".join(f"• {e}" for e in errors)
             )
         else:
-            st.sidebar.success(f"✅ All analysis complete for {selected}!")
+            st.sidebar.success(f"✅ All analysis complete for {selected} in {format_duration(_elapsed)}!")
         st.cache_data.clear()
 
     elif train_ml:
+        _run_start = _time.monotonic()
         with st.sidebar:
             with st.spinner(f"Training ML models for {selected} …"):
                 try:
@@ -124,7 +149,9 @@ def render_ticker_sidebar() -> str:
                     from dashboard.components.session_cache import record_run
                     run_ticker(selected, settings=settings, save=True)
                     record_run(selected, ml="trained")
-                    st.sidebar.success(f"ML training complete for {selected}!")
+                    _elapsed = _time.monotonic() - _run_start
+                    record_duration("train_ml", _elapsed, settings)
+                    st.sidebar.success(f"ML training complete for {selected} in {format_duration(_elapsed)}!")
                 except Exception as exc:
                     st.sidebar.error(f"ML training failed: {exc}")
         st.cache_data.clear()
@@ -135,6 +162,7 @@ def render_ticker_sidebar() -> str:
                 f"No saved model found for {selected}. Use '🏋️ Train ML Models' first."
             )
         else:
+            _run_start = _time.monotonic()
             with st.sidebar:
                 with st.spinner(f"Running ML prediction for {selected} …"):
                     try:
@@ -143,8 +171,10 @@ def render_ticker_sidebar() -> str:
                         result = predict_latest(
                             selected, model_name="XGBoost", settings=settings, target_days=5
                         )
+                        _elapsed = _time.monotonic() - _run_start
+                        record_duration("predict_only", _elapsed, settings)
                         if result is not None:
-                            st.sidebar.success(f"Prediction: {result:+.3%}")
+                            st.sidebar.success(f"Prediction: {result:+.3%} ({format_duration(_elapsed)})")
                         else:
                             st.sidebar.warning("Prediction returned None.")
                         record_run(selected, ml="predicted")

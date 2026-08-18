@@ -187,7 +187,12 @@ class LightGBMModel(MLModel):
         self.reg_alpha = reg_alpha
         self.reg_lambda = reg_lambda
         self.min_child_samples = min_child_samples
-        self.use_gpu = _cuda_available() if use_gpu is None else use_gpu
+        # Unlike XGBoost, the standard PyPI `lightgbm` wheel has no GPU support
+        # compiled in (that requires building from source), so device="gpu" would
+        # raise at fit() time even when a CUDA GPU is present. Default to CPU
+        # regardless of torch.cuda.is_available() unless the caller explicitly
+        # opts in (and has a GPU-enabled lightgbm build installed).
+        self.use_gpu = False if use_gpu is None else use_gpu
         self._model = None
 
     @property

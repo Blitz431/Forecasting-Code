@@ -10,8 +10,9 @@ Connections:
   - Used by: every module calls get_settings() to access paths, API keys, and trading parameters
   - standalone — no project-internal imports
 
-In:  .env file and environment variables (ALPACA_*, FRED_*, ML_MODEL_SECRET, etc.)
-Out: typed Settings object with nested AlpacaSettings, FredSettings, AlertSettings sub-configs
+In:  .env file and environment variables (ALPACA_*, FRED_*, OLLAMA_*, SEARX_*, ML_MODEL_SECRET, etc.)
+Out: typed Settings object with nested AlpacaSettings, FredSettings, AlertSettings, OllamaSettings,
+     SearxSettings sub-configs, plus research_* paths/tunables consumed by src/research/*
 """
 
 
@@ -69,6 +70,36 @@ class AlertSettings(BaseSettings):
         return v
 
 
+class OllamaSettings(BaseSettings):
+    """Local Ollama LLM endpoint — used by the deep-research agent (src/research/)."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="OLLAMA_",
+        env_file=_ENV_FILE,
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    base_url: str = "http://localhost:11434"
+    model: str = ""              # empty ⇒ auto-pick the first installed model
+    request_timeout: int = 120   # seconds; LLM generations can be slow
+    num_ctx: int = 8192          # context window passed as an Ollama option
+
+
+class SearxSettings(BaseSettings):
+    """Local SearXNG search endpoint — used by the deep-research agent (src/research/)."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="SEARX_",
+        env_file=_ENV_FILE,
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    base_url: str = "http://localhost:8080"
+    request_timeout: int = 20    # seconds
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=str(ROOT_DIR / ".env"),
@@ -80,6 +111,8 @@ class Settings(BaseSettings):
     alpaca: AlpacaSettings = Field(default_factory=AlpacaSettings)
     fred: FredSettings = Field(default_factory=FredSettings)
     alerts: AlertSettings = Field(default_factory=AlertSettings)
+    ollama: OllamaSettings = Field(default_factory=OllamaSettings)
+    searx: SearxSettings = Field(default_factory=SearxSettings)
 
     # Trading
     trading_mode: str = "paper"  # "paper" or "live"
@@ -182,6 +215,15 @@ class Settings(BaseSettings):
 
     # Ranking
     top_n_picks: int = 20
+
+    # Deep-research agent (Ollama + SearXNG supplier discovery — src/research/)
+    research_dir: Path = DATA_DIR / "research"           # review-queue JSON per ticker
+    research_cache_dir: Path = DATA_DIR / "research" / "cache"  # SHA-keyed LLM/search cache
+    research_max_rounds: int = 6              # hard cap on agent rounds (Auto never exceeds this)
+    research_results_per_query: int = 6       # SearXNG results pulled per query
+    research_fetch_pages: int = 3             # top-K result pages fetched for full text per round
+    research_request_delay: float = 1.0       # seconds between outbound search/LLM requests
+    research_min_confidence: float = 0.5      # findings below this are flagged low-confidence in review
 
     # FRED macro series to track
     fred_series: list[str] = [
