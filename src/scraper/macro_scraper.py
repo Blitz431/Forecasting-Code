@@ -1,3 +1,4 @@
+import threading
 from datetime import date
 from pathlib import Path
 
@@ -6,6 +7,7 @@ import pandas as pd
 from config.settings import get_settings
 from src.scraper.storage import get_latest_date, get_ticker_filepath, upsert_dataframe
 from src.utils.logging import setup_logger
+from src.utils.parallel import thread_map
 
 logger = setup_logger(__name__)
 
@@ -23,23 +25,37 @@ Out: data/raw/macro/{series_id}.parquet (one file per series, DatetimeIndex)
 """
 
 
-def _get_fred_client():
-    """Get a FRED API client. Raises if no API key configured."""
-    from fredapi import Fred
+_FRED_CLIENT = None
+_FRED_CLIENT_LOCK = threading.Lock()
 
-    settings = get_settings()
-    if not settings.fred.api_key:
-        raise ValueError(
-            "FRED_API_KEY not set. Get a free key at: "
-            "https://fred.stlouisfed.org/docs/api/api_key.html"
-        )
-    return Fred(api_key=settings.fred.api_key)
+
+def _get_fred_client():
+    """Get the shared FRED API client singleton. Raises if no API key configured."""
+    global _FRED_CLIENT
+
+    if _FRED_CLIENT is not None:
+        return _FRED_CLIENT
+
+    with _FRED_CLIENT_LOCK:
+        if _FRED_CLIENT is None:
+            from fredapi import Fred
+
+            settings = get_settings()
+            if not settings.fred.api_key:
+                raise ValueError(
+                    "FRED_API_KEY not set. Get a free key at: "
+                    "https://fred.stlouisfed.org/docs/api/api_key.html"
+                )
+            _FRED_CLIENT = Fred(api_key=settings.fred.api_key)
+
+    return _FRED_CLIENT
 
 
 def download_fred_series(
     series_id: str,
     start: str | date | None = None,
     end: str | date | None = None,
+    client=None,
 ) -> pd.DataFrame:
     """Download a single FRED series.
 
@@ -47,11 +63,13 @@ def download_fred_series(
         series_id: FRED series ID (e.g., "GDP", "FEDFUNDS").
         start: Start date.
         end: End date (defaults to today).
+        client: Optional pre-built FRED client (e.g. the shared singleton).
+            Falls back to `_get_fred_client()` if not provided.
 
     Returns:
         DataFrame with DatetimeIndex and column named after the series.
     """
-    fred = _get_fred_client()
+    fred = client if client is not None else _get_fred_client()
 
     if start is None:
         settings = get_settings()
@@ -97,10 +115,13 @@ def scrape_macro(
     data_dir.mkdir(parents=True, exist_ok=True)
     results = {}
 
+    # Determine (series_id, start_date) pairs for every series that needs fetching.
+    pairs = []
+    filepaths = {}
     for series_id in series_ids:
         filepath = get_ticker_filepath(series_id, data_dir)
+        filepaths[series_id] = filepath
 
-        # Determine start date
         if backfill:
             start = f"{settings.backfill_start_year}-01-01"
         else:
@@ -113,10 +134,25 @@ def scrape_macro(
             else:
                 start = f"{settings.backfill_start_year}-01-01"
 
-        df = download_fred_series(series_id, start=start)
+        pairs.append((series_id, start))
 
-        if not df.empty:
-            upsert_dataframe(df, filepath)
+    if not pairs:
+        logger.info(f"Macro scrape complete: {len(results)}/{len(series_ids)} series updated")
+        return results
+
+    client = _get_fred_client()
+
+    dfs = thread_map(
+        lambda pair: download_fred_series(pair[0], pair[1], client=client),
+        pairs,
+        max_workers=settings.fred_max_workers,
+        label="fred-series",
+    )
+
+    # Upsert serially in the main thread (only ~10 files, keeps logs readable).
+    for (series_id, _start), df in zip(pairs, dfs):
+        if df is not None and not df.empty:
+            upsert_dataframe(df, filepaths[series_id])
             results[series_id] = len(df)
 
     logger.info(f"Macro scrape complete: {len(results)}/{len(series_ids)} series updated")

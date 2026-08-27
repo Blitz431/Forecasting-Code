@@ -134,7 +134,7 @@ with st.container(border=True):
                     _lbl = _AT_STEPS[_at_current][1]
                     _at_prog.progress(_frac, text=_lbl)
                     _at_label.caption(f"Step {_at_current + 1} / {_at_total} — {_lbl}")
-                _log_box.text_area("Output", "\n".join(_lines[-120:]), height=360)
+                _log_box.code("\n".join(_lines[-120:]), language=None, height=360)
             _proc.wait()
             if _proc.returncode == 0:
                 _at_prog.progress(1.0, text="Done!")

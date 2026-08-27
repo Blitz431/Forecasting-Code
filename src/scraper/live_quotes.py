@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import threading
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -8,6 +10,7 @@ from pathlib import Path
 import pandas as pd
 
 from src.utils.logging import setup_logger
+from src.utils.parallel import thread_map
 
 logger = setup_logger(__name__)
 
@@ -44,6 +47,18 @@ class LiveQuote:
     timestamp: str  # ISO 8601
 
 
+# Module-level cache of Alpaca data clients keyed by (api_key, secret_key), so
+# repeated calls reuse the same client object instead of reconstructing it
+# every time. Guarded by _data_client_lock for thread-safety (get_live_quotes
+# may be called concurrently, e.g. dashboard + scheduler).
+_data_client_cache: dict[tuple[str, str], object] = {}
+_data_client_lock = threading.Lock()
+
+# In-process cache of previous closes keyed by ticker -> (file_mtime_ns, value).
+# Avoids re-reading a ticker's parquet file when it hasn't changed on disk.
+_prev_close_cache: dict[str, tuple[int, float | None]] = {}
+
+
 def _build_data_client(settings=None):
     """Return a StockHistoricalDataClient, or None if unavailable/misconfigured."""
     if settings is None:
@@ -53,18 +68,27 @@ def _build_data_client(settings=None):
     if not settings.alpaca.api_key or not settings.alpaca.secret_key:
         return None
 
-    try:
-        from alpaca.data.historical import StockHistoricalDataClient
-        return StockHistoricalDataClient(
-            api_key=settings.alpaca.api_key,
-            secret_key=settings.alpaca.secret_key,
-        )
-    except ImportError:
-        logger.error("alpaca-py not installed. Run: pip install alpaca-py")
-        return None
-    except Exception as exc:
-        logger.error(f"Failed to initialise Alpaca data client: {exc}")
-        return None
+    cache_key = (settings.alpaca.api_key, settings.alpaca.secret_key)
+    with _data_client_lock:
+        cached = _data_client_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        try:
+            from alpaca.data.historical import StockHistoricalDataClient
+            client = StockHistoricalDataClient(
+                api_key=settings.alpaca.api_key,
+                secret_key=settings.alpaca.secret_key,
+            )
+        except ImportError:
+            logger.error("alpaca-py not installed. Run: pip install alpaca-py")
+            return None
+        except Exception as exc:
+            logger.error(f"Failed to initialise Alpaca data client: {exc}")
+            return None
+
+        _data_client_cache[cache_key] = client
+        return client
 
 
 def _prev_close(ticker: str, settings) -> float | None:
@@ -73,11 +97,36 @@ def _prev_close(ticker: str, settings) -> float | None:
     if not fp.exists():
         return None
     try:
-        df = pd.read_parquet(fp)
-        closes = df["Close"].dropna() if "Close" in df.columns else pd.Series(dtype=float)
-        return float(closes.iloc[-1]) if len(closes) else None
-    except Exception:
+        mtime_ns = fp.stat().st_mtime_ns
+    except OSError:
         return None
+
+    cached = _prev_close_cache.get(ticker)
+    if cached is not None and cached[0] == mtime_ns:
+        return cached[1]
+
+    try:
+        df = pd.read_parquet(fp, columns=["Close"])
+        closes = df["Close"].dropna() if "Close" in df.columns else pd.Series(dtype=float)
+        value = float(closes.iloc[-1]) if len(closes) else None
+    except Exception:
+        value = None
+
+    _prev_close_cache[ticker] = (mtime_ns, value)
+    return value
+
+
+def _prev_closes(tickers: list[str], settings) -> dict[str, float | None]:
+    """Batched, threaded version of _prev_close() for multiple tickers."""
+    if not tickers:
+        return {}
+    results = thread_map(
+        lambda t: _prev_close(t, settings),
+        tickers,
+        max_workers=settings.scrape_io_workers,
+        label="prev-close",
+    )
+    return dict(zip(tickers, results))
 
 
 def get_live_quotes(tickers: list[str], settings=None) -> dict[str, LiveQuote]:
@@ -113,13 +162,14 @@ def get_live_quotes(tickers: list[str], settings=None) -> dict[str, LiveQuote]:
         return {}
 
     now_iso = datetime.now(timezone.utc).isoformat()
+    prevs = _prev_closes(tickers, settings)
     result: dict[str, LiveQuote] = {}
     for ticker, trade in trades.items():
         try:
             price = float(trade.price)
         except Exception:
             continue
-        prev = _prev_close(ticker, settings)
+        prev = prevs.get(ticker)
         change = (price - prev) if prev is not None else None
         change_pct = (change / prev * 100) if change is not None and prev else None
         result[ticker] = LiveQuote(
@@ -181,7 +231,9 @@ def refresh_quote_cache(settings=None) -> dict[str, LiveQuote]:
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "quotes": {t: asdict(q) for t, q in quotes.items()},
     }
-    fp.write_text(json.dumps(payload, indent=2))
+    tmp_fp = fp.with_suffix(fp.suffix + ".tmp")
+    tmp_fp.write_text(json.dumps(payload, indent=2))
+    os.replace(tmp_fp, fp)
     logger.info(f"Refreshed live quote cache: {len(quotes)}/{len(tickers)} tickers -> {fp}")
 
     return quotes

@@ -133,6 +133,17 @@ class Settings(BaseSettings):
     backfill_start_year: int = 2015
     yfinance_batch_size: int = 50  # tickers per batch to avoid rate limits
 
+    # Scraping concurrency (Phase 14 perf pass)
+    # scrape_max_workers is deliberately conservative: yfinance's own
+    # threads=True fans out ~cpu_count()*2 requests per batch internally, so
+    # effective concurrency is scrape_max_workers x yf_inner_threads, not
+    # just this value alone. See BUILD_STATUS.md / api-integration findings.
+    scrape_max_workers: int = 3   # concurrent outbound yfinance batch downloads
+    yf_inner_threads: int = 4     # cap on yfinance's own internal per-batch thread count
+    scrape_io_workers: int = 8    # concurrent parquet read/write workers
+    fred_max_workers: int = 4     # concurrent FRED series fetches
+    news_max_workers: int = 6     # concurrent news feed fetches
+
     # ML model integrity (HMAC-SHA256 signing of saved .pkl/.pt files)
     ml_model_secret: str = ""  # set via ML_MODEL_SECRET in .env
 

@@ -2,11 +2,12 @@ from datetime import date, timedelta
 from pathlib import Path
 
 import pandas as pd
-import yfinance as yf
 
 from config.settings import get_settings
-from src.scraper.storage import get_latest_date, get_ticker_filepath, upsert_dataframe
+from src.scraper._yf import extract_ticker_frame, yf_download
+from src.scraper.storage import get_latest_dates, get_ticker_filepath, upsert_dataframe
 from src.utils.logging import setup_logger
+from src.utils.parallel import thread_map
 from src.utils.validation import validate_ohlcv
 
 logger = setup_logger(__name__)
@@ -15,44 +16,16 @@ logger = setup_logger(__name__)
 Purpose: Download and store daily OHLCV prices from yfinance — supports incremental updates and full backfill.
 
 Connections:
-  - src/scraper/storage.py: upsert_dataframe(), get_latest_date(), get_ticker_filepath()
+  - src/scraper/_yf.py: yf_download(), extract_ticker_frame() — shared, rate-limit-aware yfinance access
+  - src/scraper/storage.py: upsert_dataframe(), get_latest_dates(), get_ticker_filepath()
+  - src/utils/parallel.py: thread_map() for concurrent per-batch downloads
   - src/utils/validation.py: validate_ohlcv() after each batch download
-  - config/settings.py: batch size, backfill start year, directory paths
+  - config/settings.py: batch size, backfill start year, directory paths, worker counts
   - cli/scrape.py: calls scrape_prices() and aggregate_to_quarterly()
 
 In:  list of ticker symbols; optional data_dir and backfill flag
 Out: data/raw/daily/{ticker}.parquet (daily OHLCV), data/raw/quarterly/{ticker}.parquet (resampled quarterly)
 """
-
-
-def _extract_ticker_from_multiindex(
-    data: pd.DataFrame,
-    ticker: str,
-) -> pd.DataFrame:
-    """Pull a single ticker out of a yfinance MultiIndex DataFrame.
-
-    yfinance 1.x is inconsistent about column level order:
-      - Multi-ticker download  → ['Ticker', 'Price']  e.g. ('AAPL', 'Close')
-      - Single-ticker download → ['Price', 'Ticker']  e.g. ('Close', 'AAPL')
-
-    We detect which level holds the ticker names at call time so neither
-    layout causes a KeyError.
-    """
-    level_names = data.columns.names  # e.g. ['Ticker', 'Price'] or ['Price', 'Ticker']
-
-    if level_names[0] == "Ticker":
-        ticker_level = 0
-    else:
-        ticker_level = 1
-
-    available = data.columns.get_level_values(ticker_level).unique()
-    if ticker not in available:
-        return pd.DataFrame()
-
-    df = data.xs(ticker, level=ticker_level, axis=1).dropna(how="all")
-    # Normalise column names to title-case (Open/High/Low/Close/Volume)
-    df.columns = [str(c).title() for c in df.columns]
-    return df
 
 
 def download_batch(
@@ -72,8 +45,6 @@ def download_batch(
     Returns:
         Dict mapping ticker -> DataFrame with OHLCV data.
     """
-    import time
-
     if end is None:
         end = date.today().isoformat()
     if isinstance(start, date):
@@ -83,27 +54,7 @@ def download_batch(
 
     logger.info(f"Downloading {len(tickers)} tickers from {start} to {end}")
 
-    data = pd.DataFrame()
-    for attempt in range(retries + 1):
-        try:
-            data = yf.download(
-                tickers=tickers,
-                start=start,
-                end=end,
-                group_by="ticker",
-                auto_adjust=True,
-                threads=True,
-                progress=False,
-            )
-            break   # success
-        except Exception as exc:
-            if attempt < retries:
-                wait = 5 * (attempt + 1)
-                logger.warning(f"Batch download attempt {attempt+1} failed: {exc}. Retrying in {wait}s …")
-                time.sleep(wait)
-            else:
-                logger.error(f"Batch download failed after {retries+1} attempts: {exc}")
-                return {}
+    data = yf_download(tickers, start=start, end=end, retries=retries)
 
     if data.empty:
         return {}
@@ -113,7 +64,7 @@ def download_batch(
     if isinstance(data.columns, pd.MultiIndex):
         for ticker in tickers:
             try:
-                df = _extract_ticker_from_multiindex(data, ticker)
+                df = extract_ticker_frame(data, ticker)
                 if not df.empty:
                     results[ticker] = df
             except Exception as exc:
@@ -134,6 +85,7 @@ def scrape_prices(
     tickers: list[str],
     data_dir: Path | None = None,
     backfill: bool = False,
+    max_workers: int | None = None,
 ) -> dict[str, int]:
     """Scrape and store price data for a list of tickers.
 
@@ -145,6 +97,7 @@ def scrape_prices(
         tickers: List of ticker symbols.
         data_dir: Directory to store Parquet files. Defaults to settings.
         backfill: Force full historical download.
+        max_workers: Max concurrent batch downloads. Defaults to settings.scrape_max_workers.
 
     Returns:
         Dict mapping ticker -> number of new rows added.
@@ -152,18 +105,24 @@ def scrape_prices(
     settings = get_settings()
     if data_dir is None:
         data_dir = settings.raw_daily_dir
+    if max_workers is None:
+        max_workers = settings.scrape_max_workers
 
     data_dir.mkdir(parents=True, exist_ok=True)
     batch_size = settings.yfinance_batch_size
-    results = {}
+    results: dict[str, int] = {}
+
+    # Batched lookup of the latest stored date per ticker (single call instead
+    # of a per-ticker loop).
+    filepaths = {ticker: get_ticker_filepath(ticker, data_dir) for ticker in tickers}
+    latest_dates = get_latest_dates(filepaths, max_workers=settings.scrape_io_workers)
 
     # Group tickers by whether they need backfill or incremental
     backfill_tickers = []
     incremental_groups: dict[str, list[str]] = {}  # start_date -> [tickers]
 
     for ticker in tickers:
-        filepath = get_ticker_filepath(ticker, data_dir)
-        latest = get_latest_date(filepath)
+        latest = latest_dates.get(ticker)
 
         if backfill or latest is None:
             backfill_tickers.append(ticker)
@@ -174,22 +133,17 @@ def scrape_prices(
                 incremental_groups[start] = []
             incremental_groups[start].append(ticker)
 
-    # Process backfill tickers in batches
+    # Build a flat list of (ticker_batch, start_date) work units
+    units: list[tuple[list[str], str]] = []
+
     if backfill_tickers:
         start_date = f"{settings.backfill_start_year}-01-01"
         logger.info(f"Backfilling {len(backfill_tickers)} tickers from {start_date}")
 
         for i in range(0, len(backfill_tickers), batch_size):
             batch = backfill_tickers[i : i + batch_size]
-            data = download_batch(batch, start=start_date)
+            units.append((batch, start_date))
 
-            for ticker, df in data.items():
-                if validate_ohlcv(df, ticker):
-                    filepath = get_ticker_filepath(ticker, data_dir)
-                    upsert_dataframe(df, filepath)
-                    results[ticker] = len(df)
-
-    # Process incremental tickers
     for start, ticker_group in incremental_groups.items():
         if start > date.today().isoformat():
             logger.debug(f"Skipping {len(ticker_group)} tickers — already up to date")
@@ -197,19 +151,40 @@ def scrape_prices(
 
         for i in range(0, len(ticker_group), batch_size):
             batch = ticker_group[i : i + batch_size]
-            data = download_batch(batch, start=start)
+            units.append((batch, start))
 
-            for ticker, df in data.items():
-                if not df.empty and validate_ohlcv(df, ticker):
-                    filepath = get_ticker_filepath(ticker, data_dir)
-                    upsert_dataframe(df, filepath)
-                    results[ticker] = len(df)
+    def _download_and_store(unit: tuple[list[str], str]) -> dict[str, int]:
+        batch, start = unit
+        unit_results: dict[str, int] = {}
+        data = download_batch(batch, start=start)
+
+        for ticker, df in data.items():
+            if not df.empty and validate_ohlcv(df, ticker):
+                filepath = get_ticker_filepath(ticker, data_dir)
+                upsert_dataframe(df, filepath)
+                unit_results[ticker] = len(df)
+
+        return unit_results
+
+    unit_results_list = thread_map(
+        _download_and_store, units, max_workers=max_workers, label="price-batch"
+    )
+
+    for unit_results in unit_results_list:
+        if unit_results:
+            results.update(unit_results)
 
     logger.info(f"Price scrape complete: {len(results)} tickers updated")
     return results
 
 
-def aggregate_to_quarterly(daily_dir: Path, quarterly_dir: Path, tickers: list[str] | None = None) -> None:
+def aggregate_to_quarterly(
+    daily_dir: Path,
+    quarterly_dir: Path,
+    tickers: list[str] | None = None,
+    max_workers: int | None = None,
+    force: bool = False,
+) -> None:
     """Aggregate daily OHLCV data to quarterly averages.
 
     For each ticker, computes quarterly:
@@ -221,19 +196,36 @@ def aggregate_to_quarterly(daily_dir: Path, quarterly_dir: Path, tickers: list[s
         daily_dir: Directory with daily Parquet files.
         quarterly_dir: Directory to store quarterly Parquet files.
         tickers: Specific tickers to process. None = all available.
+        max_workers: Max concurrent aggregation workers. Defaults to settings.scrape_io_workers.
+        force: Bypass the mtime-based skip check and re-aggregate every ticker.
     """
+    settings = get_settings()
+    if max_workers is None:
+        max_workers = settings.scrape_io_workers
+
     quarterly_dir.mkdir(parents=True, exist_ok=True)
 
     if tickers is None:
         from src.scraper.storage import list_stored_tickers
         tickers = list_stored_tickers(daily_dir)
 
-    for ticker in tickers:
+    def _aggregate_one(ticker: str) -> None:
         daily_path = get_ticker_filepath(ticker, daily_dir)
-        df = pd.read_parquet(daily_path) if daily_path.exists() else pd.DataFrame()
+        if not daily_path.exists():
+            return
+
+        quarterly_path = get_ticker_filepath(ticker, quarterly_dir)
+        if (
+            not force
+            and quarterly_path.exists()
+            and quarterly_path.stat().st_mtime >= daily_path.stat().st_mtime
+        ):
+            return
+
+        df = pd.read_parquet(daily_path, columns=["Open", "High", "Low", "Close", "Volume"])
 
         if df.empty:
-            continue
+            return
 
         # Resample to quarterly
         quarterly = df.resample("QE").agg({
@@ -245,7 +237,8 @@ def aggregate_to_quarterly(daily_dir: Path, quarterly_dir: Path, tickers: list[s
         }).dropna()
 
         if not quarterly.empty:
-            quarterly_path = get_ticker_filepath(ticker, quarterly_dir)
             upsert_dataframe(quarterly, quarterly_path)
+
+    thread_map(_aggregate_one, tickers, max_workers=max_workers, label="quarterly-agg")
 
     logger.info(f"Aggregated {len(tickers)} tickers to quarterly data")

@@ -256,7 +256,7 @@ def _run_scraper(extra_args: list[str]) -> None:
         )
         for line in proc.stdout:
             lines.append(line.rstrip())
-            log_box.text_area("Output", "\n".join(lines[-80:]), height=320)
+            log_box.code("\n".join(lines[-80:]), language=None, height=320)
         proc.wait()
         if proc.returncode == 0:
             st.success("Scrape finished successfully.")
@@ -382,7 +382,7 @@ def _run_pipeline(extra_args: list[str]) -> None:
                 label = steps[current][1]
                 prog_bar.progress(frac, text=label)
                 step_label.caption(f"Step {current + 1} / {total} — {label}")
-            log_box.text_area("Output", "\n".join(lines[-100:]), height=320)
+            log_box.code("\n".join(lines[-100:]), language=None, height=320)
         proc.wait()
         if proc.returncode == 0:
             prog_bar.progress(1.0, text="Done!")

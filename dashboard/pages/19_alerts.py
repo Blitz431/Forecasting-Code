@@ -153,7 +153,7 @@ with col_right:
         raw = log_path.read_text(encoding="utf-8", errors="replace")
         lines = raw.splitlines()
         last_100 = "\n".join(lines[-100:]) if lines else "(empty)"
-        st.text_area("Last 100 lines", value=last_100, height=480, disabled=True)
+        st.text_area("Last 100 lines", value=last_100, height=480, disabled=True, key="alerts_last_100_lines")
     else:
         st.info(
             "No alerts log yet.  "

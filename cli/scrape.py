@@ -64,6 +64,12 @@ def main():
         action="store_true",
         help="Skip quarterly aggregation after price scrape",
     )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=None,
+        help="Override concurrent download workers (default: from settings)",
+    )
 
     args = parser.parse_args()
     settings = get_settings()
@@ -86,7 +92,7 @@ def main():
         logger.info("SCRAPING STOCK PRICES")
         logger.info("=" * 60)
 
-        price_results = scrape_prices(tickers, backfill=args.backfill)
+        price_results = scrape_prices(tickers, backfill=args.backfill, max_workers=args.workers)
         logger.info(f"Prices: {len(price_results)} tickers updated")
 
         # Quarterly aggregation
@@ -96,6 +102,7 @@ def main():
                 daily_dir=settings.raw_daily_dir,
                 quarterly_dir=settings.raw_quarterly_dir,
                 tickers=list(price_results.keys()),
+                max_workers=args.workers,
             )
 
     # --- Macro ---
@@ -116,7 +123,7 @@ def main():
         logger.info("SCRAPING DIVIDENDS")
         logger.info("=" * 60)
 
-        div_results = scrape_dividends(tickers, backfill=args.backfill)
+        div_results = scrape_dividends(tickers, backfill=args.backfill, max_workers=args.workers)
         logger.info(f"Dividends: {len(div_results)} tickers with dividend data")
 
     # Summary

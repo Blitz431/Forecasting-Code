@@ -1,14 +1,17 @@
 from __future__ import annotations
 
-import time
+import threading
 from datetime import datetime, timezone
 from typing import Any
 
 import feedparser
+import requests
 import yfinance as yf
 from bs4 import BeautifulSoup
 
+from config.settings import get_settings
 from src.utils.logging import setup_logger
+from src.utils.parallel import thread_map
 
 logger = setup_logger(__name__)
 
@@ -29,6 +32,26 @@ _GOOGLE_NEWS_RSS = "https://news.google.com/rss/search?q={ticker}+stock&hl=en-US
 
 # Minimum articles before falling back to yfinance.news
 _RSS_FALLBACK_THRESHOLD = 5
+
+_REQUEST_TIMEOUT = 10
+_USER_AGENT = (
+    "Mozilla/5.0 (compatible; AutoStockAnalyzer/1.0; +https://github.com/)"
+)
+
+# Per-thread requests.Session — requests.Session isn't documented
+# thread-safe, so each worker thread gets its own for connection pooling
+# without cross-thread state sharing.
+_thread_local = threading.local()
+
+
+def _get_session() -> requests.Session:
+    """Return the current thread's requests.Session, creating it on first use."""
+    session = getattr(_thread_local, "session", None)
+    if session is None:
+        session = requests.Session()
+        session.headers.update({"User-Agent": _USER_AGENT})
+        _thread_local.session = session
+    return session
 
 
 def _parse_entry(entry: Any, source: str) -> dict | None:
@@ -62,19 +85,31 @@ def _parse_entry(entry: Any, source: str) -> dict | None:
         return None
 
 
-def _fetch_feed(url: str, source: str, seen_urls: set[str]) -> list[dict]:
-    """Fetch and parse a single RSS feed, skipping already-seen URLs."""
+def _fetch_feed(url: str, source: str) -> list[dict]:
+    """Fetch and parse a single RSS feed.
+
+    Dedup across feeds is NOT done here — it happens in the caller
+    (fetch_ticker_news) after all feeds have returned, since mutating a
+    shared set from pool threads isn't safe.
+    """
     articles: list[dict] = []
     try:
-        feed = feedparser.parse(url)
+        response = _get_session().get(url, timeout=_REQUEST_TIMEOUT)
+        response.raise_for_status()
+        feed = feedparser.parse(response.content)
         for entry in feed.entries:
             article = _parse_entry(entry, source)
-            if article and article["url"] not in seen_urls:
-                seen_urls.add(article["url"])
+            if article:
                 articles.append(article)
     except Exception as exc:
         logger.warning(f"RSS fetch failed for {source} ({url}): {exc}")
     return articles
+
+
+def _fetch_feed_unit(spec: tuple[str, str]) -> list[dict]:
+    """thread_map-friendly wrapper: (url, source) -> articles."""
+    url, source = spec
+    return _fetch_feed(url, source)
 
 
 def _parse_yfinance_item(item: dict) -> tuple[str, str, str, int]:
@@ -149,16 +184,24 @@ def fetch_ticker_news(ticker: str, max_articles: int = 50) -> list[dict]:
         - source (str)
         Sorted newest-first, capped at ``max_articles``.
     """
-    seen_urls: set[str] = set()
-    articles: list[dict] = []
-
     feeds = [
         (_YAHOO_RSS.format(ticker=ticker), "Yahoo Finance"),
         (_GOOGLE_NEWS_RSS.format(ticker=ticker), "Google News"),
     ]
 
-    for feed_url, source in feeds:
-        articles.extend(_fetch_feed(feed_url, source, seen_urls))
+    # Fetch both feeds concurrently. thread_map preserves input order, so
+    # feed_results[0] is Yahoo and feed_results[1] is Google.
+    feed_results = thread_map(_fetch_feed_unit, feeds, max_workers=2, label="news-feed")
+
+    # Dedup by URL AFTER both feeds return — Yahoo first, then Google, so
+    # a Yahoo article wins over a Google duplicate.
+    seen_urls: set[str] = set()
+    articles: list[dict] = []
+    for feed_articles in feed_results:
+        for article in feed_articles or []:
+            if article["url"] not in seen_urls:
+                seen_urls.add(article["url"])
+                articles.append(article)
 
     if len(articles) < _RSS_FALLBACK_THRESHOLD:
         logger.debug(f"[{ticker}] Only {len(articles)} RSS articles — trying yfinance fallback")
@@ -173,20 +216,35 @@ def fetch_batch_news(
     tickers: list[str],
     max_articles: int = 50,
     delay: float = 1.0,
+    max_workers: int | None = None,
 ) -> dict[str, list[dict]]:
-    """Fetch news for multiple tickers with a polite delay between requests.
+    """Fetch news for multiple tickers concurrently on a bounded thread pool.
 
     Args:
         tickers: List of ticker symbols.
         max_articles: Max articles per ticker.
-        delay: Seconds to sleep between tickers.
+        delay: NOTE — semantic change: this used to be a hard per-ticker
+            serialization delay (time.sleep(delay) between each ticker,
+            processed one at a time). It is now the stagger (seconds)
+            between task *submissions* on the bounded pool, which only
+            bounds the average submission rate (~max_workers / delay per
+            second) and no longer guarantees strict serialization. If a
+            caller needs the old hard-serialization guarantee, pass
+            max_workers=1 instead of relying on `delay`.
+        max_workers: Concurrent ticker fetches. Defaults to
+            settings.news_max_workers when None.
 
     Returns:
         Dict mapping ticker -> list of article dicts.
     """
-    results: dict[str, list[dict]] = {}
-    for i, ticker in enumerate(tickers):
-        results[ticker] = fetch_ticker_news(ticker, max_articles=max_articles)
-        if delay > 0 and i < len(tickers) - 1:
-            time.sleep(delay)
-    return results
+    if max_workers is None:
+        max_workers = get_settings().news_max_workers
+
+    results = thread_map(
+        lambda t: fetch_ticker_news(t, max_articles),
+        tickers,
+        max_workers=max_workers,
+        label="news-batch",
+        stagger=delay / max(max_workers, 1),
+    )
+    return {ticker: (articles or []) for ticker, articles in zip(tickers, results)}
