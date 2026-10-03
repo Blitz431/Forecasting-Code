@@ -48,3 +48,5 @@ logs/
 
 # Claude
 .claude/
+CLAUDE.md
+.bandit_baseline.json
