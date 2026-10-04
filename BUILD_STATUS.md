@@ -29,7 +29,7 @@ Every module starts as Unverified. The architect checks the real files before pl
 
 | Module | Files | Status | Note |
 |---|---|---|---|
-| forecasting | src/forecasting/ (auto_best, base, decomposition, exponential_smoothing, metrics, moving_average, regression, runner) | Unverified | |
+| forecasting | src/forecasting/ (auto_best, base, decomposition, exponential_smoothing, metrics, moving_average, regression, runner) | Broken | SES/Holt init fix verified. Separate gap: NaN/inf input gives silent NaN forecasts; runner.best_result can return a NaN-RMSE winner (low severity, predates fix) |
 | ml | src/ml/ (base, catboost_model, ensemble_model, feature_engineer, feature_selection, linear_models, lstm_model, random_forest, runner, transformer_model, tuner, walk_forward, xgboost_model) | Unverified | |
 
 ## News and political
@@ -69,3 +69,6 @@ Every module starts as Unverified. The architect checks the real files before pl
 | Date | Agent | Note |
 |---|---|---|
 | 2026-10-02 | setup | Created BUILD_STATUS.md with every module set to Unverified |
+| 2026-10-04 | debugger | forecasting/exponential_smoothing: fixed SES/Holt TypeError on statsmodels 0.15 (explicit initialization_method); Needs Review |
+| 2026-10-04 | reviewer | forecasting/exponential_smoothing: PASS; explicit initialization_method="estimated" correct and minimal, 97 tests pass; Reviewed |
+| 2026-10-04 | tester | forecasting: SES/Holt fix verified equivalent to statsmodels; added 36 edge tests (suite 133 passed); found NaN/inf input gap in wrappers and runner.best_result, plus predict(0) leaking a statsmodels error; Broken |

@@ -53,7 +53,7 @@ class SimpleExpSmoothing(ForecastMethod):
         self._series = series
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            self._model_fit = _SES(series.values.astype(float)).fit(optimized=True)
+            self._model_fit = _SES(series.values.astype(float), initialization_method="estimated").fit(optimized=True)
 
     def predict(self, horizons: int) -> pd.Series:
         preds = self._model_fit.forecast(horizons)
@@ -96,7 +96,7 @@ class HoltLinearTrend(ForecastMethod):
         self._series = series
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            self._model_fit = Holt(series.values.astype(float)).fit(optimized=True)
+            self._model_fit = Holt(series.values.astype(float), initialization_method="estimated").fit(optimized=True)
 
     def predict(self, horizons: int) -> pd.Series:
         preds = self._model_fit.forecast(horizons)
