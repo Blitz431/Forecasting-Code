@@ -10,6 +10,9 @@ from pathlib import Path
 ROOT = Path(__file__).parent.parent
 LOG_DIR = ROOT / "data" / "logs"
 
+# Set by main() when --force is passed; bypasses the "already ran today" guard.
+_FORCE_RUN = False
+
 """
 Purpose: Daily automation loop — APScheduler cron jobs that run the full pipeline (scrape → indicators → forecast/ML/news → report → EOD snapshot).
 
@@ -41,6 +44,38 @@ def _log(msg: str, log_file: Path) -> None:
     try:
         with log_file.open("a", encoding="utf-8") as f:
             f.write(line + "\n")
+    except OSError:
+        pass
+
+
+# ---------------------------------------------------------------------------#
+# Daily "already ran today" guard
+# ---------------------------------------------------------------------------#
+
+def _utc_today() -> str:
+    """UTC date string — matches the cron trigger timezone, not local time."""
+    return datetime.now(tz=timezone.utc).date().isoformat()
+
+
+def _marker_path(job_name: str) -> Path:
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    return LOG_DIR / f".done_{job_name}_{_utc_today()}"
+
+
+def _already_done_today(job_name: str) -> bool:
+    """True if this daily job already completed successfully today (UTC)."""
+    if _FORCE_RUN:
+        return False
+    return _marker_path(job_name).exists()
+
+
+def _mark_done_today(job_name: str) -> None:
+    """Write the completion marker for today (UTC). Never raises."""
+    try:
+        _marker_path(job_name).write_text(
+            datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC") + "\n",
+            encoding="utf-8",
+        )
     except OSError:
         pass
 
@@ -88,19 +123,29 @@ def _run_step(label: str, cmd: list[str], log_file: Path) -> bool:
 def job_scrape() -> None:
     """6:00 AM — incremental price / macro / dividend scrape."""
     log = _daily_log_path()
+    if _already_done_today("scrape"):
+        _log("=== JOB: scrape — already ran today, skipping ===", log)
+        return
     _log("=== JOB: scrape ===", log)
-    _run_step("scrape", [sys.executable, str(ROOT / "cli" / "scrape.py")], log)
+    ok = _run_step("scrape", [sys.executable, str(ROOT / "cli" / "scrape.py")], log)
+    if ok:
+        _mark_done_today("scrape")
 
 
 def job_indicators() -> None:
     """6:15 AM — technical indicators for all stored tickers."""
     log = _daily_log_path()
+    if _already_done_today("indicators"):
+        _log("=== JOB: indicators — already ran today, skipping ===", log)
+        return
     _log("=== JOB: indicators ===", log)
-    _run_step(
+    ok = _run_step(
         "indicators",
         [sys.executable, str(ROOT / "cli" / "indicators.py"), "--all"],
         log,
     )
+    if ok:
+        _mark_done_today("indicators")
 
 
 def job_analysis() -> None:
@@ -110,38 +155,48 @@ def job_analysis() -> None:
     the remaining two still execute.
     """
     log = _daily_log_path()
+    if _already_done_today("analysis"):
+        _log("=== JOB: analysis — already ran today, skipping ===", log)
+        return
     _log("=== JOB: analysis ===", log)
-    _run_step(
+    ok_forecast = _run_step(
         "forecast",
         [sys.executable, str(ROOT / "cli" / "forecast.py"), "--all"],
         log,
     )
-    _run_step(
+    ok_ml = _run_step(
         "ml-predict",
         [sys.executable, str(ROOT / "cli" / "ml.py"), "--all", "--predict"],
         log,
     )
-    _run_step(
+    ok_news = _run_step(
         "news",
         [sys.executable, str(ROOT / "cli" / "news.py"), "--premarket"],
         log,
     )
+    if ok_forecast and ok_ml and ok_news:
+        _mark_done_today("analysis")
 
 
 def job_report() -> None:
     """7:00 AM — generate morning PDF/Excel report then dispatch alerts."""
     log = _daily_log_path()
+    if _already_done_today("report"):
+        _log("=== JOB: report — already ran today, skipping ===", log)
+        return
     _log("=== JOB: report ===", log)
-    _run_step(
+    ok_morning = _run_step(
         "report-morning",
         [sys.executable, str(ROOT / "cli" / "report.py"), "--morning"],
         log,
     )
-    _run_step(
+    ok_alerts = _run_step(
         "report-alerts",
         [sys.executable, str(ROOT / "cli" / "report.py"), "--alerts"],
         log,
     )
+    if ok_morning and ok_alerts:
+        _mark_done_today("report")
 
 
 def job_reconcile_stops() -> None:
@@ -188,12 +243,17 @@ def job_eod() -> None:
     placing any new orders.
     """
     log = _daily_log_path()
+    if _already_done_today("eod"):
+        _log("=== JOB: eod-snapshot — already ran today, skipping ===", log)
+        return
     _log("=== JOB: eod-snapshot ===", log)
-    _run_step(
+    ok = _run_step(
         "eod-snapshot",
         [sys.executable, str(ROOT / "cli" / "trade.py"), "--mode", "paper", "--dry-run"],
         log,
     )
+    if ok:
+        _mark_done_today("eod")
 
 
 # ---------------------------------------------------------------------------#
@@ -262,6 +322,7 @@ def cmd_run_now() -> None:
 
     _log("[scheduler] --run-now complete", log)
     print("\n[scheduler] Full pipeline complete.")
+    print("  (Jobs already completed today were skipped. Use --force to re-run.)")
 
 
 def cmd_status() -> None:
@@ -270,14 +331,15 @@ def cmd_status() -> None:
 
     now = datetime.now(tz=timezone.utc)
     print(f"\nScheduler status — {now.strftime('%Y-%m-%d %H:%M:%S UTC')}\n")
-    print(f"  {'Job':<14}  {'Time (UTC)':<12}  Next Scheduled Run")
-    print("  " + "-" * 58)
+    print(f"  {'Job':<14}  {'Time (UTC)':<12}  {'Today':<12}  Next Scheduled Run")
+    print("  " + "-" * 74)
     for name, cron_kwargs, _ in _JOB_REGISTRY:
         trigger = CronTrigger(timezone="UTC", **cron_kwargs)
         next_fire = trigger.get_next_fire_time(None, now)
         cron_str = f"{cron_kwargs['hour']:02d}:{cron_kwargs['minute']:02d}"
         next_str = next_fire.strftime("%Y-%m-%d %H:%M UTC") if next_fire else "N/A"
-        print(f"  {name:<14}  {cron_str:<12}  {next_str}")
+        today_str = "done today" if _marker_path(name).exists() else "pending"
+        print(f"  {name:<14}  {cron_str:<12}  {today_str:<12}  {next_str}")
     for name, interval_kwargs, _ in _INTERVAL_JOB_REGISTRY:
         mins = interval_kwargs.get("minutes", 0)
         print(f"  {name:<14}  every {mins} min   (only while --start is running)")
@@ -337,8 +399,16 @@ def main() -> None:
         dest="reconcile_stops_once",
         help="Run the trailing-stop reconciliation job a single time (for testing)",
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Ignore the 'already ran today' markers and re-run daily jobs anyway",
+    )
 
     args = parser.parse_args()
+
+    global _FORCE_RUN
+    _FORCE_RUN = args.force
 
     if args.start:
         cmd_start()

@@ -781,6 +781,16 @@ APScheduler runs the full daily pipeline automatically on a wall-clock schedule:
 python cli/scheduler.py  # starts the automated daily pipeline
 ```
 
+### Auto-start at Windows login
+
+- **Register:** run `setup_scheduler_autostart.bat`. **Unregister:** run `remove_scheduler_autostart.bat`. **Verify:** `schtasks /query /tn "StockChart Scheduler" /v /fo list`.
+- **What it does:** registers a Windows scheduled task named `StockChart Scheduler` that, at every logon, opens a visible console running `launch_scheduler.bat` (`python cli/scheduler.py --start`). This is fully independent of the Streamlit dashboard — closing the scheduler console stops only the scheduler, not the dashboard, and vice versa.
+- **Job times are UTC.** The table above lists wall-clock local times for readability, but the actual cron triggers in `cli/scheduler.py` use `timezone="UTC"` — convert accordingly for your local timezone.
+- **No cloud execution.** This PC must be on and awake at each job's fire time. APScheduler does not backfill missed runs — if the machine is off or asleep, that day's job simply doesn't run.
+- `python cli/scheduler.py --status` shows each job's next scheduled fire time plus whether the 5 daily jobs have already completed today.
+- **Daily idempotency guard:** the 5 daily cron jobs (scrape, indicators, analysis, report, eod) write a marker file `data/logs/.done_<job>_<YYYY-MM-DD>` (UTC date) on full success, and skip re-running if that marker is already present. This protects against duplicate runs from multiple logons in one day, manual scheduler restarts, or repeated `--run-now` calls. The 2 interval jobs (`live-quotes`, `reconcile-stops`) are intentionally unguarded since they're meant to re-run every 5 minutes all day. Force a re-run with `python cli/scheduler.py --run-now --force`, or delete the relevant marker file.
+- **Caveat:** marker dates use UTC, but the scheduler's log filename (`scheduler_YYYY-MM-DD.log`) uses the local date — the two can disagree near midnight.
+
 ---
 
 ## 17. The Dashboard — All 20 Pages
