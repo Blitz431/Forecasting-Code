@@ -556,6 +556,16 @@ def load_ranking_cache(settings=None) -> list[RankEntry] | None:
 
     entries: list[RankEntry] = []
     for _, row in df.iterrows():
+        # Skip failed-scoring placeholders (score -inf / NaN, rank 0). Mirrors
+        # top_picks(), which only keeps composite_score > -inf. Without this
+        # they sort first (rank 0) and pollute every cached[:N] consumer.
+        score = float(row["composite_score"])
+        try:
+            rank = int(row["rank"])
+        except (ValueError, TypeError):
+            continue  # NaN / unparseable rank (hand-edited or legacy file)
+        if not score > float("-inf") or rank < 1:
+            continue
         sigs = {}
         for sig in _WEIGHTS:
             val = row.get(sig)
@@ -564,8 +574,8 @@ def load_ranking_cache(settings=None) -> list[RankEntry] | None:
 
         entries.append(RankEntry(
             ticker=str(row["ticker"]),
-            composite_score=float(row["composite_score"]),
-            rank=int(row["rank"]),
+            composite_score=score,
+            rank=rank,
             signals=sigs,
             signals_available=int(row.get("signals_available", len(sigs))),
         ))

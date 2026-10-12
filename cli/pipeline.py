@@ -14,6 +14,7 @@ Usage
     python cli/pipeline.py --pool 100    # smaller phase-1 pool
     python cli/pipeline.py --top 30      # show top 30 instead of 50
     python cli/pipeline.py --no-deep     # skip LSTM/GRU/Transformer (faster ML)
+    python cli/pipeline.py --skip-phase1 # reuse today's saved Phase 1, run Phase 2 only
     python cli/pipeline.py --output data/rankings/pipeline.csv
 """
 
@@ -28,6 +29,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from config.settings import get_settings
+from src.pipeline_runner.phase1_store import check_phase1_reusable, save_phase1_result
+from src.pipeline_runner.steps import PHASE1_FALLBACK_MARKER, PHASE1_REUSE_MARKER
 from src.ranking.ranker import rank_tickers, save_ranking_cache
 from src.scraper.storage import load_dataframe
 from src.utils.logging import setup_logger
@@ -158,27 +161,48 @@ def run_pipeline(
     no_deep: bool = False,
     phase1_only: bool = False,
     output: str | None = None,
+    skip_phase1: bool = False,
 ) -> None:
+    if phase1_only and skip_phase1:
+        raise ValueError("--skip-phase1 cannot be combined with --phase1-only")
     settings = get_settings()
 
     # ------------------------------------------------------------------ #
     # Phase 1 — fast rank of full universe
     # ------------------------------------------------------------------ #
-    all_tickers = get_tickers(settings.ticker_source)
-    available = [
-        t for t in all_tickers
-        if (settings.raw_daily_dir / f"{t}.parquet").exists()
-    ]
+    pool_tickers = None
+    if skip_phase1:
+        reuse = check_phase1_reusable(settings, pool=pool)
+        if reuse.usable:
+            pool_tickers = reuse.pool_tickers
+            print(
+                f"[Phase 1] {PHASE1_REUSE_MARKER} from {reuse.created_at} "
+                f"({reuse.ranked_count} ranked) -- skipping Phase 1, "
+                f"pool: top {len(pool_tickers)} candidates"
+            )
+        else:
+            print(f"[Phase 1] {PHASE1_FALLBACK_MARKER}: {reuse.reason} -- running Phase 1")
 
-    print(f"\n[Phase 1] Fast-ranking {len(available)} tickers (no ML) ...")
-    t0 = time.time()
-    phase1 = rank_tickers(
-        available, settings,
-        include_ml=False,
-        include_indicators=True,
-    )
-    pool_tickers = [e.ticker for e in phase1[:pool]]
-    print(f"[Phase 1] Done in {time.time() - t0:.0f}s -- pool: top {len(pool_tickers)} candidates")
+    if pool_tickers is None:
+        all_tickers = get_tickers(settings.ticker_source)
+        available = [
+            t for t in all_tickers
+            if (settings.raw_daily_dir / f"{t}.parquet").exists()
+        ]
+
+        print(f"\n[Phase 1] Fast-ranking {len(available)} tickers (no ML) ...")
+        t0 = time.time()
+        phase1 = rank_tickers(
+            available, settings,
+            include_ml=False,
+            include_indicators=True,
+        )
+        try:
+            save_phase1_result(phase1, settings, universe_size=len(available))
+        except Exception as exc:
+            print(f"[Phase 1] Warning: could not save Phase 1 result: {exc}")
+        pool_tickers = [e.ticker for e in phase1[:pool]]
+        print(f"[Phase 1] Done in {time.time() - t0:.0f}s -- pool: top {len(pool_tickers)} candidates")
 
     if phase1_only:
         final = phase1[:top]
@@ -306,8 +330,12 @@ def _parse_args() -> argparse.Namespace:
                         help="Number of final results to print (default: 50).")
     parser.add_argument("--no-deep", action="store_true",
                         help="Skip LSTM/GRU/Transformer -- faster ML training.")
-    parser.add_argument("--phase1-only", action="store_true",
-                        help="Run Phase 1 fast rank only, skip ML training.")
+    mode_group = parser.add_mutually_exclusive_group()
+    mode_group.add_argument("--phase1-only", action="store_true",
+                            help="Run Phase 1 fast rank only, skip ML training.")
+    mode_group.add_argument("--skip-phase1", action="store_true",
+                            help="Reuse today's saved Phase 1 result and run only Phase 2; "
+                                 "falls back to a full run if it is missing or stale.")
     parser.add_argument("--output", type=str, default=None, metavar="PATH",
                         help="Optional CSV path to save results.")
     return parser.parse_args()
@@ -321,4 +349,5 @@ if __name__ == "__main__":
         no_deep=args.no_deep,
         phase1_only=args.phase1_only,
         output=args.output,
+        skip_phase1=args.skip_phase1,
     )

@@ -133,8 +133,13 @@ class TriggerChecker:
         events: list[AlertEvent] = []
 
         try:
-            from src.ranking.ranker import top_picks, to_dataframe
-            picks = top_picks(self._s.top_n_picks, self._s)
+            from src.ranking.ranker import load_ranking_cache
+            # Cache only: scoring runs from the pipeline/button, never as a side effect of a trigger check.
+            cached = load_ranking_cache(self._s)
+            if not cached:
+                logger.info("[buy_signal] No ranking cache — skipping (run the pipeline to generate it).")
+                return []
+            picks = cached[:self._s.top_n_picks]
         except Exception as exc:
             logger.warning(f"[buy_signal] Could not load top picks: {exc}")
             return []

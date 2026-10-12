@@ -14,11 +14,14 @@ import streamlit as st
 from config.settings import get_settings
 from dashboard.components.charts import sector_donut, ranking_bar, _empty_fig
 from dashboard.components.tables import style_ranking_table, style_generic
+from src.pipeline_runner.run_state import ranking_cache_version
 
 st.set_page_config(page_title="Sector Analysis", page_icon="🗂️", layout="wide")
 
 from dashboard.components.market_clock import render_market_clock
 render_market_clock()
+from dashboard.components.pipeline_progress import render_pipeline_progress
+render_pipeline_progress()
 
 st.title("🗂️ Sector Analysis")
 st.caption("Sector breakdown of top picks, concentration warnings, and rotation view.")
@@ -31,15 +34,14 @@ settings = get_settings()
 # ---------------------------------------------------------------------------#
 
 @st.cache_data(ttl=900, show_spinner="Loading rankings …")
-def _load_top_picks(n: int = 30):
-    from src.ranking.ranker import load_ranking_cache, top_picks, to_dataframe
+def _load_top_picks(n: int = 30, ranking_cache_version: float = 0.0):
+    from src.ranking.ranker import load_ranking_cache, to_dataframe
     cached = load_ranking_cache()
     if cached:
         picks = cached[:n]
         return to_dataframe(picks), picks
-    # Fallback if no cache exists
-    picks = top_picks(n=n, include_ml=False, include_indicators=True)
-    return to_dataframe(picks), picks
+    # No cache: never score the full universe implicitly on page open.
+    return pd.DataFrame(), []
 
 with st.sidebar:
     top_n = st.slider("Tickers to analyse", 10, 100, value=30)
@@ -51,13 +53,13 @@ if not settings.raw_daily_dir.exists() or not any(settings.raw_daily_dir.glob("*
 
 with st.spinner("Loading rankings …"):
     try:
-        df, picks = _load_top_picks(top_n)
+        df, picks = _load_top_picks(top_n, ranking_cache_version())
     except Exception as e:
         st.error(f"Failed to load rankings: {e}")
         st.stop()
 
 if df.empty:
-    st.warning("No picks available.")
+    st.info("No ranking cache yet. Run the pipeline from Settings or page 6.")
     st.stop()
 
 # ---------------------------------------------------------------------------#

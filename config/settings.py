@@ -183,6 +183,28 @@ class Settings(BaseSettings):
     # Ranking
     top_n_picks: int = 20
 
+    # Dashboard automation
+    auto_rank_enabled: bool = True  # AUTO_RANK_ENABLED; False disables only the automatic daily run
+
+    @field_validator("auto_rank_enabled", mode="before")
+    @classmethod
+    def _coerce_auto_rank_enabled(cls, v):
+        if v is None or (isinstance(v, str) and v.strip() == ""):
+            return True
+        if isinstance(v, bool):
+            return v
+        text = str(v).strip().lower()
+        if text in ("true", "1", "yes", "on", "t", "y"):
+            return True
+        if text in ("false", "0", "no", "off", "f", "n"):
+            return False
+        # Invalid value: treat as disabled rather than breaking every page.
+        import logging
+        logging.getLogger(__name__).warning(
+            "Invalid AUTO_RANK_ENABLED value; treating as disabled (expected true or false)."
+        )
+        return False
+
     # FRED macro series to track
     fred_series: list[str] = [
         "GDP",          # Gross Domestic Product

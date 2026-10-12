@@ -20,6 +20,8 @@ st.set_page_config(page_title="Political & Insider", page_icon="🏛️", layout
 
 from dashboard.components.market_clock import render_market_clock
 render_market_clock()
+from dashboard.components.pipeline_progress import render_pipeline_progress
+render_pipeline_progress()
 
 st.title("🏛️ Political & Insider Trading")
 st.caption("Congressional STOCK Act filings and SEC Form 4 insider transactions.")

@@ -20,6 +20,8 @@ st.set_page_config(page_title="Options Flow", page_icon="🎯", layout="wide")
 
 from dashboard.components.market_clock import render_market_clock
 render_market_clock()
+from dashboard.components.pipeline_progress import render_pipeline_progress
+render_pipeline_progress()
 
 st.title("🎯 Options Flow")
 st.caption("Put/Call ratio, unusual activity flags, and implied vs historical volatility.")

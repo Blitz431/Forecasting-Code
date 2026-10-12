@@ -24,6 +24,8 @@ st.set_page_config(page_title="Trading", page_icon="🔧", layout="wide")
 
 from dashboard.components.market_clock import render_market_clock
 render_market_clock()
+from dashboard.components.pipeline_progress import render_pipeline_progress
+render_pipeline_progress()
 
 st.title("🔧 Trading Controls")
 st.caption("Paper and live trading via Alpaca — account status, circuit breaker, multi-strategy management.")

@@ -21,6 +21,8 @@ st.set_page_config(page_title="Backtesting", page_icon="⏮️", layout="wide")
 
 from dashboard.components.market_clock import render_market_clock
 render_market_clock()
+from dashboard.components.pipeline_progress import render_pipeline_progress
+render_pipeline_progress()
 
 st.title("⏮️ Backtesting")
 st.caption("Paper-trading simulation 2020–2026 — equity curve, trade log, regime overlay, Sharpe, max drawdown vs SPY.")

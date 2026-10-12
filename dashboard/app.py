@@ -21,6 +21,8 @@ st.set_page_config(page_title="Settings", page_icon="🔐", layout="wide")
 
 from dashboard.components.market_clock import render_market_clock
 render_market_clock()
+from dashboard.components.pipeline_progress import render_pipeline_progress
+render_pipeline_progress()
 
 st.title("🔐 Settings — API Keys & Secrets")
 st.caption(
@@ -46,6 +48,7 @@ KEY_SPEC: list[tuple[str, str, bool, str]] = [
     ("SMTP_USER",            "SMTP Username",            False, "Full email address."),
     ("SMTP_PASSWORD",        "SMTP Password",            True,  "App-password recommended."),
     ("ALERT_EMAIL_TO",       "Alert Recipient Email",    False, "Where daily alerts get sent."),
+    ("AUTO_RANK_ENABLED",    "Auto-run daily ranking",   False, "true or false. Runs the full pipeline automatically on the first dashboard open each day. Buttons still work."),
 ]
 
 
@@ -289,18 +292,49 @@ st.write(
     "**Phase 2** trains the full ML models on the top candidates, then re-ranks them. "
     "Run after a scrape update to refresh the trading signals."
 )
+st.caption(
+    "The full pipeline runs automatically in the background once per day on the first "
+    "dashboard open (set AUTO_RANK_ENABLED=false above to turn this off). If it fails, "
+    "a fast rank runs instead."
+)
+
+from src.pipeline_runner.launcher import (
+    DEFAULT_POOL,
+    DEFAULT_TOP,
+    reap_children,
+    start_pipeline_run,
+)
+from src.pipeline_runner.run_state import (
+    get_run_paths,
+    is_run_active,
+    read_log_tail,
+    read_status,
+)
+from src.utils.logging import setup_logger
+
+logger = setup_logger(__name__)
+
+reap_children()
+try:
+    _run_paths = get_run_paths()
+    pipeline_active = is_run_active(_run_paths)
+except Exception as _exc:
+    # Unreadable/read-only data dir: treat as idle, launcher reports spawn errors.
+    logger.warning(f"Pipeline run-state lookup failed: {_exc}")
+    _run_paths = None
+    pipeline_active = False
 
 pipe_col1, pipe_col2 = st.columns(2)
 with pipe_col1:
     pipe_pool = st.number_input(
         "Phase-1 pool size (fed into ML training)",
-        min_value=10, max_value=503, value=100, step=10,
+        min_value=10, max_value=503, value=DEFAULT_POOL, step=10,
         help="Top-N fast-ranked tickers that get the full ML treatment.",
     )
 with pipe_col2:
     pipe_top = st.number_input(
         "Final top-N to show",
-        min_value=5, max_value=200, value=50, step=5,
+        min_value=5, max_value=200, value=DEFAULT_TOP, step=5,
         help="How many ranked results to display and cache.",
     )
 
@@ -308,98 +342,63 @@ pipe_btn_col1, pipe_btn_col2 = st.columns(2)
 with pipe_btn_col1:
     run_phase1_only = st.button(
         "⚡ Fast Rank Only (Phase 1)",
-        help="Indicators + forecasts + sentiment — no ML training, very fast (~30s)",
+        disabled=pipeline_active,
+        help="Quick no-ML ranking (~30s). Replaces the current rankings, "
+             "including today's ML rankings if any.",
     )
 with pipe_btn_col2:
     run_full_pipeline = st.button(
         "🧠 Full Analysis Pipeline (Phase 1 + 2)",
         type="primary",
-        help="Runs ML training on top candidates — takes several minutes",
+        disabled=pipeline_active,
+        help="Phase 1 + ML training. If a fast rank already ran today, only the ML part runs.",
     )
 
 
-_PIPELINE_STEPS_PHASE1 = [
-    (["Fast-ranking"],                        "Phase 1: Fast-ranking all tickers with indicators..."),
-    (["[Phase 1] Done"],                      "Phase 1 complete. Collecting prices..."),
-    (["Collecting price", "Phase 1 Only]"],   "Collecting price data..."),
-    (["Ranking cache saved"],                 "Saving ranking cache..."),
-    (["AutoStockAnalyzer --"],                "Building results table..."),
-]
-
-_PIPELINE_STEPS_FULL = [
-    (["Fast-ranking"],            "Phase 1: Fast-ranking all tickers with indicators..."),
-    (["[Phase 1] Done"],          "Phase 1 complete — starting ML training..."),
-    (["Training ML models"],      "Phase 2: Training ML models on top candidates..."),
-    (["ML training done"],        "ML training done — re-ranking with ML signal..."),
-    (["Re-ranking top"],          "Phase 2: Re-ranking all candidates with ML signal..."),
-    (["Re-rank done"],            "Re-ranking done — collecting price targets..."),
-    (["Collecting price", "[Output]"], "Collecting price targets..."),
-    (["Ranking cache saved"],     "Saving ranking cache..."),
-    (["AutoStockAnalyzer --"],    "Building results table..."),
-]
-
-
-def _advance_step(line: str, steps: list, current: int) -> int:
-    for i in range(current + 1, len(steps)):
-        if any(m in line for m in steps[i][0]):
-            return i
-    return current
-
-
-def _run_pipeline(extra_args: list[str]) -> None:
-    is_phase1 = "--phase1-only" in extra_args
-    steps = _PIPELINE_STEPS_PHASE1 if is_phase1 else _PIPELINE_STEPS_FULL
-    total = len(steps)
-    current = 0
-
-    cli_path = ROOT_DIR / "cli" / "pipeline.py"
-    cmd = [sys.executable, str(cli_path)] + extra_args
-    _env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
-
-    prog_bar   = st.progress(0, text=steps[0][1])
-    step_label = st.empty()
-    step_label.caption(f"Step 1 / {total} — {steps[0][1]}")
-    log_box = st.empty()
-    lines: list[str] = []
-
-    try:
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            env=_env,
-            cwd=str(ROOT_DIR),
-        )
-        for line in proc.stdout:
-            lines.append(line.rstrip())
-            new = _advance_step(line, steps, current)
-            if new != current:
-                current = new
-                frac = current / (total - 1)
-                label = steps[current][1]
-                prog_bar.progress(frac, text=label)
-                step_label.caption(f"Step {current + 1} / {total} — {label}")
-            log_box.text_area("Output", "\n".join(lines[-100:]), height=320)
-        proc.wait()
-        if proc.returncode == 0:
-            prog_bar.progress(1.0, text="Done!")
-            step_label.caption(f"Step {total} / {total} — Complete")
-            st.success("Pipeline finished — ranking cache updated.")
-            st.cache_data.clear()
-        else:
-            st.error(f"Pipeline exited with code {proc.returncode}.")
-    except Exception as exc:
-        st.error(f"Pipeline failed to start: {exc}")
+def _start_pipeline(mode: str) -> None:
+    res = start_pipeline_run(mode, int(pipe_pool), int(pipe_top), trigger="button")
+    if res.started:
+        st.success(res.message)
+        st.rerun()
+    else:
+        st.warning(res.message)
 
 
 if run_phase1_only:
-    _run_pipeline(["--pool", str(pipe_pool), "--top", str(pipe_top), "--phase1-only"])
+    _start_pipeline("phase1")
 
 if run_full_pipeline:
-    _run_pipeline(["--pool", str(pipe_pool), "--top", str(pipe_top), "--no-deep"])
+    _start_pipeline("full")
+
+
+def _fmt_local(value: object) -> str:
+    try:
+        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            from datetime import timezone
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone().strftime("%Y-%m-%d %H:%M:%S")
+    except (ValueError, TypeError):
+        return "-"
+
+
+_last = read_status(_run_paths) if _run_paths is not None else None
+if _last:
+    _parts = [
+        f"state: {_last.get('state', '?')}",
+        f"mode: {_last.get('mode', '?')}",
+        f"trigger: {_last.get('trigger', '?')}",
+        f"phase 1 reused: {'yes' if _last.get('phase1_reused') else 'no'}",
+        f"started: {_fmt_local(_last.get('started_at'))}",
+    ]
+    if _last.get("finished_at"):
+        _parts.append(f"finished: {_fmt_local(_last.get('finished_at'))}")
+    if _last.get("state") == "failed" and _last.get("error"):
+        _parts.append(f"error: {str(_last['error']).splitlines()[0][:200]}")
+    st.caption("Last run - " + " | ".join(_parts))
+    if _last.get("run_id"):
+        with st.expander("Last run log"):
+            st.code("\n".join(read_log_tail(_run_paths, str(_last["run_id"]))) or "(no log output)")
 
 st.divider()
 

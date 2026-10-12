@@ -20,6 +20,8 @@ st.set_page_config(page_title="Short-Term Signals", page_icon="📡", layout="wi
 
 from dashboard.components.market_clock import render_market_clock
 render_market_clock()
+from dashboard.components.pipeline_progress import render_pipeline_progress
+render_pipeline_progress()
 
 st.title("📡 Short-Term Technical Signals")
 st.caption("9 indicator signals with weighted composite score — RSI, MACD, Bollinger, Stochastic, EMA/SMA, Volume, Momentum, Fundamentals, Correlation.")

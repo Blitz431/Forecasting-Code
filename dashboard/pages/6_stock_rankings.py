@@ -14,12 +14,19 @@ import streamlit as st
 from config.settings import get_settings
 from dashboard.components.charts import ranking_bar, score_breakdown
 from dashboard.components.tables import style_ranking_table
+from src.pipeline_runner.launcher import DEFAULT_POOL, DEFAULT_TOP, reap_children, start_pipeline_run
+from src.pipeline_runner.run_state import get_run_paths, is_run_active, ranking_cache_version
 from src.utils.input_sanitize import clean_ticker_list
+from src.utils.logging import setup_logger
+
+logger = setup_logger(__name__)
 
 st.set_page_config(page_title="Stock Rankings", page_icon="🏆", layout="wide")
 
 from dashboard.components.market_clock import render_market_clock
 render_market_clock()
+from dashboard.components.pipeline_progress import render_pipeline_progress
+render_pipeline_progress()
 
 st.title("🏆 Stock Rankings")
 st.caption("Composite top-20 picks aggregating forecasts, indicators, ML, news, political, options, and earnings signals.")
@@ -62,6 +69,7 @@ def _compute_rankings(
     include_ml: bool,
     include_indicators: bool,
     custom: str,
+    ranking_cache_version: float,   # cache key only: new parquet mtime -> fresh load
 ):
     from src.ranking.ranker import load_ranking_cache, top_picks, to_dataframe
 
@@ -84,8 +92,6 @@ def _compute_rankings(
         picks = cached[:top_n]
         updated_at = None
         try:
-            import pandas as pd
-            from config.settings import get_settings
             s = get_settings()
             df_raw = pd.read_parquet(s.data_dir / "ranking_cache.parquet")
             updated_at = df_raw["updated_at"].iloc[0] if "updated_at" in df_raw.columns else None
@@ -97,8 +103,24 @@ def _compute_rankings(
     return pd.DataFrame(), [], None
 
 
-if st.button("▶  Re-run Ranking", type="primary"):
-    st.cache_data.clear()   # force fresh run
+reap_children()
+try:
+    active = is_run_active(get_run_paths())
+except Exception as exc:
+    # Unreadable/read-only data dir: treat as idle, launcher reports spawn errors.
+    logger.warning(f"Pipeline run-state lookup failed: {exc}")
+    active = False
+if st.button("▶  Re-run Ranking", type="primary",
+             disabled=active and not custom_tickers.strip(),
+             help="Starts a fast (no-ML) ranking in the background. Replaces the current rankings."):
+    if custom_tickers.strip():
+        st.cache_data.clear()   # force fresh run
+    else:
+        res = start_pipeline_run("phase1", DEFAULT_POOL, DEFAULT_TOP, trigger="button")
+        if res.started:
+            st.rerun()
+        else:
+            st.warning(res.message)
 
 with st.spinner("Loading rankings …"):
     try:
@@ -107,6 +129,7 @@ with st.spinner("Loading rankings …"):
             include_ml,
             not no_indicators,
             custom_tickers or "",
+            ranking_cache_version(),
         )
     except Exception as e:
         st.error(f"Ranking failed: {e}")

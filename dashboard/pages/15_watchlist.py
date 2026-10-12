@@ -22,6 +22,8 @@ st.set_page_config(page_title="Watchlist", page_icon="👁️", layout="wide")
 
 from dashboard.components.market_clock import render_market_clock
 render_market_clock()
+from dashboard.components.pipeline_progress import render_pipeline_progress
+render_pipeline_progress()
 
 st.title("👁️ Watchlist")
 st.caption("Custom watchlist with daily + weekly signals, peer comparison, and price charts.")
